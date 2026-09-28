@@ -1,0 +1,6 @@
+client_id: dev_test
+display_name: "Dev/Test Store"
+
+shopify:
+  store_domain_env: SHOPIFY_STORE_DOMAIN
+  access_token_env: SHOPIFY_ACCESS_TOKEN
