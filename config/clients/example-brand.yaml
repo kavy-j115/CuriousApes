@@ -1,0 +1,19 @@
+# Template for one brand's config. Copy this file per client, e.g. acme.yaml.
+# Non-secret settings only — actual tokens are referenced by env var name,
+# not stored here. Real per-brand token values go in .env (git-ignored).
+
+client_id: example-brand          # short, stable slug — used as a key in the database
+display_name: "Example Brand"
+
+shopify:
+  store_domain: example-brand.myshopify.com
+  access_token_env: EXAMPLE_BRAND_SHOPIFY_TOKEN   # name of the env var holding the real token
+
+meta_ads:
+  ad_account_id: ""
+  access_token_env: EXAMPLE_BRAND_META_TOKEN
+
+thresholds:
+  revenue_change_pct: 10
+  roas_change_pct: 10
+  cac_change_pct: 15

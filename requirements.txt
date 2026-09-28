@@ -1,0 +1,14 @@
+# Core — installed now, used starting Milestone 2
+python-dotenv==1.0.1      # loads .env into environment variables
+psycopg2-binary==2.9.9    # Python <-> PostgreSQL driver
+sqlalchemy==2.0.35         # SQL toolkit / ORM, used for cleaner query building
+pandas==2.2.3              # tabular data manipulation
+
+# Added at Milestone 3 (Shopify) — listed now so the file stays the single source of truth
+requests==2.32.3           # HTTP calls to REST APIs
+
+# Added at Milestone 6 (Excel)
+openpyxl==3.1.5            # write .xlsx reports
+
+# Added at Milestone 10 (AI)
+anthropic==0.39.0
