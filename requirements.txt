@@ -1,6 +1,6 @@
 # Core — installed now, used starting Milestone 2
 python-dotenv==1.0.1      # loads .env into environment variables
-psycopg2-binary==2.9.9    # Python <-> PostgreSQL driver
+psycopg2-binary==2.9.13   # Python <-> PostgreSQL driver
 sqlalchemy==2.0.35         # SQL toolkit / ORM, used for cleaner query building
 pandas==2.2.3              # tabular data manipulation
 
