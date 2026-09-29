@@ -64,3 +64,22 @@ MTD Sale all correct, Total row's AOV is a true weighted average
 real GA4/Meta data or a genuine multi-month date range — see
 docs/metrics.md for what MTD/LMTD verification has been done
 (synthetic data only).
+
+## Storage upload + UI download
+
+`src/reports/storage.py` uploads each generated report to Supabase Storage
+(`reports/<client_id>/<filename>`, overwriting the previous run's file
+rather than accumulating versions) via plain REST calls to Supabase's
+Storage API, using the **service role key** — deliberately, not the anon
+key, since uploading is a write and, with RLS now enabled (docs/auth.md),
+a public bucket for these files would undo that work (a report contains
+one client's full data).
+
+**Split deliberately across two nights' work:** the Python upload side is
+built now (`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` not set yet —
+confirmed the pipeline skips this step gracefully rather than crashing,
+same pattern as every other not-yet-configured integration in this
+project). The Next.js **download button** is held for when the login
+integration lands — building it now would mean either a public bucket
+(a real regression) or guessing at an auth-gated signed-URL flow before
+any user session exists to gate it with.

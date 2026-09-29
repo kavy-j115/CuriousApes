@@ -30,6 +30,7 @@ from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
 from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
+from src.reports.storage import ensure_bucket_exists, upload_report
 from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_failure_alert
 
 load_dotenv()
@@ -102,6 +103,18 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
         output_path = OUTPUT_DIR / f"{client_id}_business_health_report.xlsx"
         generate_report(rows, config.get("display_name", client_id), str(output_path))
         results.append(StepResult("Report", "ok", f"{len(rows)} rows -> {output_path.name}"))
+
+        supabase_url = os.environ.get("SUPABASE_URL")
+        service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        if supabase_url and service_role_key:
+            try:
+                ensure_bucket_exists(supabase_url, service_role_key)
+                storage_path = upload_report(str(output_path), client_id, supabase_url, service_role_key)
+                results.append(StepResult("Report upload", "ok", storage_path))
+            except Exception as e:
+                results.append(StepResult("Report upload", "error", str(e)))
+        else:
+            results.append(StepResult("Report upload", "skipped", "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set"))
     except Exception as e:
         results.append(StepResult("Report", "error", str(e)))
 
