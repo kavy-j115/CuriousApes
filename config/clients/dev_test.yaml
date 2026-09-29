@@ -13,3 +13,8 @@ meta_ads:
 # ga4:
 #   property_id: ""
 #   service_account_secret: dev_test.ga4.service_account_json
+
+thresholds:
+  revenue_change_pct: 10
+  cac_change_pct: 15
+  roas_change_pct: 10

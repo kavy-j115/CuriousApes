@@ -30,6 +30,7 @@ from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
 from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
+from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_failure_alert
 
 load_dotenv()
 
@@ -89,6 +90,7 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
     else:
         results.append(StepResult("GA4 sync", "skipped", "not configured for this client"))
 
+    rows: list[dict] = []
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
@@ -102,6 +104,26 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
         results.append(StepResult("Report", "ok", f"{len(rows)} rows -> {output_path.name}"))
     except Exception as e:
         results.append(StepResult("Report", "error", str(e)))
+
+    thresholds = get_value(config, "thresholds") or {}
+    if not thresholds:
+        results.append(StepResult("Alerts", "skipped", "no thresholds configured for this client"))
+    elif len(rows) < 2:
+        results.append(StepResult("Alerts", "skipped", "insufficient history (need at least 2 days)"))
+    else:
+        today_row, yesterday_row = rows[-1], rows[-2]
+        alerts = check_metric_alerts(today_row, yesterday_row, thresholds)
+        if alerts:
+            save_alerts(conn, client_id, today_row["report_date"], alerts)
+            results.append(StepResult("Alerts", "ok", f"{len(alerts)} triggered: {', '.join(a.alert_type for a in alerts)}"))
+        else:
+            results.append(StepResult("Alerts", "ok", "none triggered"))
+
+    # Every error already recorded above also becomes a persisted alert --
+    # so a sync failure isn't only visible in this run's console output.
+    for r in results:
+        if r.status == "error":
+            save_sync_failure_alert(conn, client_id, date.today(), r.step, r.detail)
 
     return results
 
