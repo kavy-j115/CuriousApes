@@ -120,6 +120,14 @@ export default async function Home({
             <Link href="/segments" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
               Segment Export →
             </Link>
+            {selectedClient && (
+              <a
+                href={`/api/reports/${selectedClient}`}
+                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+              >
+                Download Excel Report ↓
+              </a>
+            )}
           </div>
           {tab !== "compare" && (
             <ReportControls

@@ -75,11 +75,22 @@ key, since uploading is a write and, with RLS now enabled (docs/auth.md),
 a public bucket for these files would undo that work (a report contains
 one client's full data).
 
-**Split deliberately across two nights' work:** the Python upload side is
-built now (`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` not set yet —
-confirmed the pipeline skips this step gracefully rather than crashing,
-same pattern as every other not-yet-configured integration in this
-project). The Next.js **download button** is held for when the login
-integration lands — building it now would mean either a public bucket
-(a real regression) or guessing at an auth-gated signed-URL flow before
-any user session exists to gate it with.
+The Next.js **download button** (`web/src/app/api/reports/[clientId]/route.ts`)
+was completed the same night, once the login integration (docs/auth.md)
+resolved the blocker that had deferred it. Two-step authorization, not
+one: the user's own session decides *whether* they can have a given
+client's file (piggybacking directly on RLS — querying `clients` for the
+requested ID via the normal session-aware client returns nothing at all
+if the user lacks access, real or fake client_id alike, so there's no
+separate authorization check to get wrong), then the service role key
+fetches the file server-side only after that's already proven. The key
+never reaches the browser and is never used to *decide* access, only to
+fetch once access is already established.
+
+**Verified:** the route (and every route, confirmed) is protected by the
+proxy before even reaching its own logic — navigating to it while logged
+out redirects to `/login`, the same as any page. **Not yet verified:** an
+authorized download actually succeeding, since that needs both a real
+logged-in session and `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (neither
+set yet) — the code fails clearly (a 503 with an explicit message) rather
+than crashing if the storage credentials are missing.
