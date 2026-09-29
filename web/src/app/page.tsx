@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import ClientPicker from "./ClientPicker";
 
 type DailyMetric = {
   client_id: string;
@@ -10,18 +11,36 @@ type DailyMetric = {
   units_sold: number;
 };
 
-export default async function Home() {
-  const { data, error } = await supabase
-    .from("daily_business_metrics")
-    .select("*")
-    .order("order_date", { ascending: false });
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ client?: string }>;
+}) {
+  const { client } = await searchParams;
+  const selectedClient = client ?? "all";
+
+  const [{ data: clients }, metricsResult] = await Promise.all([
+    supabase.from("clients").select("client_id, display_name").order("display_name"),
+    (() => {
+      let query = supabase.from("daily_business_metrics").select("*").order("order_date", { ascending: false });
+      if (selectedClient !== "all") {
+        query = query.eq("client_id", selectedClient);
+      }
+      return query;
+    })(),
+  ]);
+
+  const { data, error } = metricsResult;
 
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans dark:bg-black">
       <main className="mx-auto max-w-4xl">
-        <h1 className="mb-6 text-2xl font-semibold text-black dark:text-zinc-50">
-          D2C Analytics
-        </h1>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
+            D2C Analytics
+          </h1>
+          <ClientPicker clients={clients ?? []} selected={selectedClient} />
+        </div>
 
         {error && (
           <p className="rounded bg-red-100 p-4 text-red-800">
@@ -31,7 +50,7 @@ export default async function Home() {
 
         {!error && (!data || data.length === 0) && (
           <p className="text-zinc-600 dark:text-zinc-400">
-            No metrics yet — run the Shopify sync and transform scripts first.
+            No metrics yet for this selection — run the Shopify sync and transform scripts first.
           </p>
         )}
 
