@@ -50,6 +50,28 @@ Verified against hand-calculated synthetic data spanning two months
 (`scripts/sanity_check_report_metrics.py`) — not yet against real multi-month
 client data, since we don't have any yet.
 
+## Cohort retention & LTV (`sql/012_cohort_retention.sql`)
+
+Buildable entirely from data already in `orders` — no new data source
+needed, unlike most of Milestone 14's other ideas (contribution margin
+needs COGS data we don't have; channel economics needs real ad spend,
+currently blocked on the Meta account issue).
+
+| Metric | Formula |
+|---|---|
+| `customer_ltv.lifetime_value` | sum of `total_price` across all of a customer's orders |
+| `cohort_retention.cohort_month` | the calendar month of a customer's *first* order |
+| `cohort_retention.months_since_cohort` | how many months after their cohort month a given order month is (0 = their first month) |
+| `cohort_retention.retention_rate` | (customers active in that month) / (total customers in that cohort) |
+
+Verified against synthetic multi-month data covering the cases that
+would silently break a naive implementation: a customer with a real gap
+between orders (month 0 and month 2, nothing in month 1), a customer with
+no repeat order at all, and a second cohort starting in a different
+month — all four resulting rows matched hand-calculated expectations
+exactly. Also re-verified RLS isolation specifically on these two new
+views (not just assumed inherited from the pattern used elsewhere).
+
 ## Not yet built
 
 New vs. returning customers, per-product revenue/contribution — deferred
