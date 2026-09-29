@@ -40,13 +40,12 @@ summary — the "structured logging" style from the original project brief.
 (`workflow_dispatch`) from the Actions tab for testing without waiting for
 the schedule.
 
-**Setup required (one-time):** the pipeline's secrets need to move from
-your local `.env` into GitHub's encrypted Actions Secrets — go to the
-repo's **Settings → Secrets and variables → Actions** and add:
-`DATABASE_URL`, `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_ACCESS_TOKEN`,
-`META_AD_ACCOUNT_ID`, `META_ACCESS_TOKEN`. These never touch the repo
-itself — GitHub injects them as environment variables only during the
-workflow run.
+**Setup required (one-time):** just one secret — go to the repo's
+**Settings → Secrets and variables → Actions** and add `DATABASE_URL`.
+Every per-client credential lives in Supabase Vault instead, reached
+through that same connection — see docs/secrets.md for why this changed
+from the four secrets this originally required, and why `DATABASE_URL`
+specifically can't move into Vault too.
 
 **Closes a gap noted in docs/reporting.md:** GitHub Actions runners are
 Linux, so LibreOffice's formula recalculation (which didn't work on this

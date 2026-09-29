@@ -11,6 +11,7 @@ docs/scheduling.md).
 """
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -23,9 +24,10 @@ from dotenv import load_dotenv
 import psycopg2
 import psycopg2.extras
 
-from src.config.clients import load_all, resolve_env
+from src.config.clients import load_all, get_value, resolve_secret
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
 from src.ingestion.meta_insights import sync_insights as sync_meta_insights
+from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
 from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
 
@@ -45,8 +47,8 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
     client_id = config["client_id"]
     results: list[StepResult] = []
 
-    store_domain = resolve_env(config, "shopify", "store_domain_env")
-    shopify_token = resolve_env(config, "shopify", "access_token_env")
+    store_domain = get_value(config, "shopify", "store_domain")
+    shopify_token = resolve_secret(conn, config, "shopify", "access_token_secret")
     if store_domain and shopify_token:
         try:
             count = sync_shopify_orders(conn, client_id, store_domain, shopify_token, updated_at_min=since)
@@ -62,8 +64,8 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
     else:
         results.append(StepResult("Shopify sync", "skipped", "not configured for this client"))
 
-    ad_account_id = resolve_env(config, "meta_ads", "ad_account_id_env")
-    meta_token = resolve_env(config, "meta_ads", "access_token_env")
+    ad_account_id = get_value(config, "meta_ads", "ad_account_id")
+    meta_token = resolve_secret(conn, config, "meta_ads", "access_token_secret")
     if ad_account_id and meta_token:
         try:
             until = date.today().isoformat()
@@ -74,8 +76,18 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
     else:
         results.append(StepResult("Meta sync", "skipped", "not configured for this client"))
 
-    # GA4 intentionally has no branch here yet -- see docs/connectors.md,
-    # no client has real credentials configured.
+    property_id = get_value(config, "ga4", "property_id")
+    ga4_service_account_json = resolve_secret(conn, config, "ga4", "service_account_secret")
+    if property_id and ga4_service_account_json:
+        try:
+            until = date.today().isoformat()
+            service_account_info = json.loads(ga4_service_account_json)
+            count = sync_ga4_sessions(conn, client_id, property_id, service_account_info, since, until)
+            results.append(StepResult("GA4 sync", "ok", f"{count} daily rows"))
+        except Exception as e:
+            results.append(StepResult("GA4 sync", "error", str(e)))
+    else:
+        results.append(StepResult("GA4 sync", "skipped", "not configured for this client"))
 
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

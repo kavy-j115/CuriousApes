@@ -5,9 +5,12 @@ GA4's documented request/response shape, no real property access exists yet.
 This is the first connector in the project built this way; treat it as more
 likely to need a fix once real credentials arrive than Shopify or Meta were.
 
-Auth: a Service Account JSON key file (google-auth handles the JWT signing
-and token refresh -- see the module docstring in requirements.txt for why
-we use the library here instead of everywhere else).
+Auth: a Service Account JSON key, passed in as an already-parsed dict
+(google-auth handles the JWT signing and token refresh -- see the module
+docstring in requirements.txt for why we use the library here instead of
+everywhere else). Deliberately takes a dict, not a file path -- the key
+lives in Supabase Vault as text and is json.loads()'d by the caller, so
+it's never written to disk at all.
 """
 
 import requests
@@ -23,21 +26,21 @@ SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
 METRICS = ["sessions", "addToCarts", "checkouts", "transactions"]
 
 
-def _access_token(service_account_file: str) -> str:
-    credentials = service_account.Credentials.from_service_account_file(
-        service_account_file, scopes=SCOPES
+def _access_token(service_account_info: dict) -> str:
+    credentials = service_account.Credentials.from_service_account_info(
+        service_account_info, scopes=SCOPES
     )
     credentials.refresh(GoogleAuthRequest())
     return credentials.token
 
 
-def fetch_daily_ecommerce_metrics(property_id: str, service_account_file: str, since: str, until: str):
+def fetch_daily_ecommerce_metrics(property_id: str, service_account_info: dict, since: str, until: str):
     """Yields one raw row dict per day in [since, until], each shaped like:
     {"date": "20260901", "sessions": 123, "addToCarts": 40, "checkouts": 12, "transactions": 5}
 
     since/until: 'YYYY-MM-DD' strings.
     """
-    token = _access_token(service_account_file)
+    token = _access_token(service_account_info)
 
     response = requests.post(
         API_URL_TEMPLATE.format(property_id=property_id),

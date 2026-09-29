@@ -24,12 +24,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libreoffice-calc
 
       - name: Run pipeline
+        # DATABASE_URL is the only secret this workflow needs -- every
+        # per-client credential lives in Supabase Vault instead, reached
+        # through this same connection. See docs/secrets.md.
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
-          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
-          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
-          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
         run: python -m src.scheduler.run_pipeline
 
       - name: Recalculate Excel formulas

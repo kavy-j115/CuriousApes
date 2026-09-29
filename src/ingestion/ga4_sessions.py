@@ -12,12 +12,12 @@ import psycopg2.extras
 from src.connectors.ga4 import fetch_daily_ecommerce_metrics
 
 
-def sync_sessions(conn, client_id: str, property_id: str, service_account_file: str, since: str, until: str) -> int:
+def sync_sessions(conn, client_id: str, property_id: str, service_account_info: dict, since: str, until: str) -> int:
     """Returns the number of daily rows written."""
     cur = conn.cursor()
     count = 0
 
-    for row in fetch_daily_ecommerce_metrics(property_id, service_account_file, since, until):
+    for row in fetch_daily_ecommerce_metrics(property_id, service_account_info, since, until):
         session_date = datetime.strptime(row["date"], "%Y%m%d").date()
 
         cur.execute(

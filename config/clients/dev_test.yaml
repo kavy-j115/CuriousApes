@@ -1,15 +1,15 @@
 client_id: dev_test
 display_name: "Dev/Test Store"
 
+# Identifiers -- not secret, safe to commit (useless without the token below).
 shopify:
-  store_domain_env: SHOPIFY_STORE_DOMAIN
-  access_token_env: SHOPIFY_ACCESS_TOKEN
+  store_domain: automation-chtg2kic.myshopify.com
+  access_token_secret: dev_test.shopify.access_token   # Vault secret name
 
 meta_ads:
-  ad_account_id_env: META_AD_ACCOUNT_ID
-  access_token_env: META_ACCESS_TOKEN
+  ad_account_id: "2333349140733915"
+  access_token_secret: dev_test.meta_ads.access_token   # Vault secret name
 
-# ga4: credentials pending real property access -- see .env.example
 # ga4:
-#   property_id_env: GA4_PROPERTY_ID
-#   service_account_file_env: GA4_SERVICE_ACCOUNT_FILE
+#   property_id: ""
+#   service_account_secret: dev_test.ga4.service_account_json
