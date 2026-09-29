@@ -114,6 +114,9 @@ export default async function Home({
                 </Link>
               ))}
             </div>
+            <Link href="/segments" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+              Segment Export →
+            </Link>
           </div>
           {tab !== "compare" && (
             <ReportControls
