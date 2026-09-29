@@ -22,4 +22,8 @@ PyYAML==6.0.2
 phonenumbers==9.0.40
 
 # Added at Milestone 10 (AI)
-anthropic==0.39.0
+# 0.39.0 (the version originally pinned here) is incompatible with the httpx
+# version pip resolves today -- its internal client construction passes a
+# 'proxies' kwarg httpx removed. Upgraded to current stable instead of
+# pinning httpx backwards.
+anthropic==1.9.0
