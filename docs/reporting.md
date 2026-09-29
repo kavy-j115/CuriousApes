@@ -48,10 +48,13 @@ combination — we used Excel itself via COM automation
 (`pywin32`) as a Windows-native substitute to force recalculation and
 scan for formula errors before shipping the file. That script isn't part
 of the project (it's a one-off dev verification tool), but the same
-check should happen wherever this pipeline actually runs on a schedule —
-revisit this when we get to Milestone 7 (automation), since a
-Linux-based scheduler (e.g. GitHub Actions) would need LibreOffice
-instead.
+check should happen wherever this pipeline actually runs on a schedule.
+**Resolved at Milestone 7:** the GitHub Actions workflow
+(docs/scheduling.md) runs on Linux, where LibreOffice's `socket.AF_UNIX`
+automation works natively — a plain `soffice --headless --convert-to
+xlsx` round-trip recalculates every generated report as part of the
+scheduled run. The Windows/COM workaround above remains useful for local
+manual verification only.
 
 ### Verified
 

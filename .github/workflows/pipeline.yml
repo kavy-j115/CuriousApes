@@ -1,0 +1,49 @@
+name: D2C Analytics Pipeline
+
+on:
+  schedule:
+    # 03:30 UTC = 09:00 IST -- matches the "run every morning" example from
+    # the original project brief.
+    - cron: "30 3 * * *"
+  workflow_dispatch: {}  # lets us trigger a run manually from the Actions tab, for testing
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install LibreOffice (for Excel formula recalculation)
+        run: sudo apt-get update && sudo apt-get install -y libreoffice-calc
+
+      - name: Run pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+        run: python -m src.scheduler.run_pipeline
+
+      - name: Recalculate Excel formulas
+        # openpyxl writes formulas with no cached value -- LibreOffice
+        # recalculates on load, and --convert-to (even to the same format)
+        # forces a full open/recalc/save round-trip.
+        run: |
+          for f in reports/output/*.xlsx; do
+            soffice --headless --convert-to xlsx --outdir reports/output "$f"
+          done
+
+      - name: Upload generated reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-health-reports
+          path: reports/output/*.xlsx
+          retention-days: 30

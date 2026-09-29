@@ -138,16 +138,19 @@ def generate_report(rows: list[dict], display_name: str, output_path: str) -> No
 
     # PROAS conditional color scale (red -> yellow -> green), auto min/mid/max
     # since a hardcoded threshold wouldn't generalize across clients/date ranges.
-    proas_col_letter = get_column_letter(_col_of(all_columns, "proas"))
-    proas_range = f"{proas_col_letter}{first_data_row}:{proas_col_letter}{total_row - 1}"
-    ws.conditional_formatting.add(
-        proas_range,
-        ColorScaleRule(
-            start_type="min", start_color="F8696B",
-            mid_type="percentile", mid_value=50, mid_color="FFEB84",
-            end_type="max", end_color="63BE7B",
-        ),
-    )
+    # Guarded on rows existing -- with zero data rows, first_data_row > total_row - 1,
+    # producing a reversed/invalid range (e.g. "I4:I3") that openpyxl rejects.
+    if rows:
+        proas_col_letter = get_column_letter(_col_of(all_columns, "proas"))
+        proas_range = f"{proas_col_letter}{first_data_row}:{proas_col_letter}{total_row - 1}"
+        ws.conditional_formatting.add(
+            proas_range,
+            ColorScaleRule(
+                start_type="min", start_color="F8696B",
+                mid_type="percentile", mid_value=50, mid_color="FFEB84",
+                end_type="max", end_color="63BE7B",
+            ),
+        )
 
     for col_idx in range(1, n_cols + 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = 16

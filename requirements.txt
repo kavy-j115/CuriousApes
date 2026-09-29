@@ -14,5 +14,8 @@ openpyxl==3.1.5            # write .xlsx reports
 # (the actual API calls are plain requests, same as our other connectors)
 google-auth==2.35.0
 
+# Added at Milestone 7 (scheduling) — reads config/clients/*.yaml
+PyYAML==6.0.2
+
 # Added at Milestone 10 (AI)
 anthropic==0.39.0

@@ -1,0 +1,27 @@
+# Template for one brand's config. Copy this file into config/clients/ as
+# <client_id>.yaml. Non-secret settings only -- actual credentials are
+# referenced by env var name, not stored here. Real per-brand credential
+# values go in .env (git-ignored). This file itself lives outside
+# config/clients/ specifically so the pipeline orchestrator (which treats
+# every config/clients/*.yaml file as a real client to sync) never picks
+# it up by mistake.
+
+client_id: example-brand          # short, stable slug — used as a key in the database
+display_name: "Example Brand"
+
+shopify:
+  store_domain_env: EXAMPLE_BRAND_SHOPIFY_STORE_DOMAIN
+  access_token_env: EXAMPLE_BRAND_SHOPIFY_TOKEN
+
+meta_ads:
+  ad_account_id_env: EXAMPLE_BRAND_META_AD_ACCOUNT_ID
+  access_token_env: EXAMPLE_BRAND_META_TOKEN
+
+# ga4:
+#   property_id_env: EXAMPLE_BRAND_GA4_PROPERTY_ID
+#   service_account_file_env: EXAMPLE_BRAND_GA4_SERVICE_ACCOUNT_FILE
+
+thresholds:
+  revenue_change_pct: 10
+  roas_change_pct: 10
+  cac_change_pct: 15
