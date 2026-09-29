@@ -84,6 +84,18 @@ real data inserted into a throwaway client: 3 orders/$300 (Period A) vs.
 2 orders/$500 (Period B) produced exactly the expected deltas
 (-1 order/-33.3%, +$200/+66.7% revenue, +$150/+150.0% AOV).
 
+## "Ask AI" button
+
+A floating button (root layout, so it appears on every page) opens
+claude.ai in a small popup window via `window.open()` — a free
+alternative to the API-based AI Analyst (Milestone 10, currently shelved
+over API cost). An iframe embed was considered first and ruled out with a
+direct check, not an assumption: `curl -sI https://claude.ai` shows
+`X-Frame-Options: SAMEORIGIN`, which blocks any third-party site from
+embedding it in an `<iframe>` at all. `window.open()` isn't affected by
+that restriction — it opens a separate window rather than embedding one —
+so that's what this uses instead.
+
 ## Not built yet
 
 RLS policies, Supabase Auth (login), Netlify deployment. Deliberately
