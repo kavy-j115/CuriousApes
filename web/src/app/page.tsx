@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
+import { logout } from "./login/actions";
 import { ReportRow, REPORT_COLUMNS, computeTotal } from "@/lib/reportMath";
 import ReportControls from "./ReportControls";
 import CompareControls from "./CompareControls";
@@ -26,6 +27,8 @@ export default async function Home({
 }) {
   const { client, from, to, aFrom, aTo, bFrom, bTo, tab: tabParam } = await searchParams;
   const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "report";
+
+  const supabase = await createClient();
 
   const { data: clients } = await supabase
     .from("clients")
@@ -137,6 +140,11 @@ export default async function Home({
               bTo={selectedBTo}
             />
           )}
+          <form action={logout}>
+            <button type="submit" className="text-xs text-zinc-500 hover:underline">
+              Log out
+            </button>
+          </form>
         </div>
 
         {tab !== "compare" && error && (

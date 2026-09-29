@@ -1,13 +1,14 @@
 # Auth & Row Level Security
 
-## Status: database layer complete and verified. Next.js integration pending.
+## Status: database layer complete and verified. Next.js integration built and structurally verified; live login pending a real confirmed user.
 
-Built during an autonomous session while Bash/npm tool access was
-intermittently unavailable (a transient sandbox classifier issue, not a
-project problem). The SQL side (the security-critical half) is complete,
-tested, and passing. The Next.js session/cookie integration is
-deliberately held back rather than written from memory — see "Why the
-Next.js half is incomplete" below.
+Built during an autonomous session. The SQL side (the security-critical
+half) is complete, tested, and passing. The Next.js session integration
+was initially held back over version-drift risk (tool access was
+intermittently unavailable early in the session), then completed once
+tools stabilized and every version-sensitive detail could be verified
+directly rather than assumed — including catching a real breaking change
+along the way (see "A real version-drift catch" below).
 
 **Immediate consequence, so it isn't a surprise tomorrow morning:** the
 dashboard, as it exists right now, has no login flow yet — it queries
@@ -97,25 +98,61 @@ All test data (fake `auth.users`/`user_profiles`/`client_access` rows,
 two throwaway clients and their orders) is cleaned up unconditionally
 after the run.
 
-## Why the Next.js half is incomplete
+## The Next.js integration
 
-The Supabase-for-Next.js session/cookie integration (`@supabase/ssr`'s
-`createServerClient`/`createBrowserClient`, a `middleware.ts` for session
-refresh, protected routes) has a real, known history of breaking API
-changes tied to Next.js version (the cookie adapter shape changed between
-`get`/`set`/`remove` and `getAll`/`setAll` across versions). This project
-runs Next.js **16**, bleeding-edge enough that this exact combination
-hasn't been checked against real docs yet — the same category of mistake
-already caught twice in this project (the AGENTS.md warning about this
-Next.js version, and the async `searchParams` change). Writing this from
-memory would repeat a mistake this project has already paid for twice;
-holding it for verification (npm/Bash tool access was intermittently
-unavailable tonight) is the more consistent choice than guessing.
+`web/src/lib/supabase/server.ts` (Server Components — one new client per
+request per `@supabase/ssr`'s own guidance), `web/src/lib/supabase/client.ts`
+(Client Components), `web/src/proxy.ts` (refreshes the session on every
+request; also redirects unauthenticated requests to `/login`), and a login
+page (`web/src/app/login/`) with email+password sign-in via a Server
+Action. No sign-up action exists deliberately — user provisioning is
+admin-side (a `user_profiles`/`client_access` row created directly), not
+self-service, matching the agency/client access model.
+
+### A real version-drift catch, not just caution
+
+**`middleware.ts` is deprecated in Next.js 16**, renamed to `proxy.ts`
+(the exported function is now `proxy`, not `middleware`) — confirmed by
+reading this project's own installed Next.js docs before writing anything.
+Writing the file under its old, now-unrecognized name would have silently
+done nothing — no session refresh, no route protection, no error either,
+since Next.js simply wouldn't have picked the file up at all. This is
+exactly the category of mistake the earlier caution about Next.js 16 was
+about, and it was real, not hypothetical.
+
+Also confirmed directly rather than assumed: `@supabase/ssr`'s cookie
+methods must be `getAll`/`setAll` (the older `get`/`set`/`remove` are
+deprecated, checked via the package's own type definitions), `getClaims()`
+is the current recommended session check (over `getSession()`/`getUser()`),
+and `next/headers`'s `cookies()` is `async` in this Next.js version (same
+pattern as the `searchParams` change caught earlier in this project).
+
+### Verified
+
+- Type-checks clean (`npx tsc --noEmit`).
+- An unauthenticated request to `/` redirects to `/login` (confirmed in
+  browser — the proxy is actually running, not just present in the repo).
+- `/segments` (a page that doesn't even use Supabase) is also correctly
+  protected — the proxy applies to all routes by default, not an
+  allowlist that could accidentally miss one.
+- Login page renders correctly (email/password fields, submit button).
+
+**Not verified: an actual successful login.** That needs a real,
+email-confirmed user, which needs either the Supabase dashboard (a manual
+"Add user" step with "Auto confirm" checked — about 30 seconds) or
+`SUPABASE_SERVICE_ROLE_KEY` (not set yet) to create one via the Admin API.
+Deliberately not hand-crafted directly in `auth.users` via SQL — that
+table has enough internal Supabase/GoTrue invariants (password hashing
+scheme, required metadata columns) that guessing at them risked a
+confusing, hard-to-diagnose broken user rather than a clean test.
 
 ## Not built yet
 
-- Next.js session/cookie integration, login page, protected routes,
-  role-based UI filtering (client picker limited to assigned clients).
+- An actual successful login test (see above — needs your 30-second
+  manual step or the service role key).
+- Role-based UI filtering (the client picker already only shows what RLS
+  returns, but no UI yet distinguishes admin/user/client visually or
+  restricts the segment export tool by role).
 - A real user-provisioning flow (currently: manually inserting
   `user_profiles`/`client_access` rows via SQL; a proper admin UI for
   this is future work).
