@@ -25,6 +25,7 @@ SELECT
     m.order_date AS report_date,
     ga.sessions,
     ga.add_to_carts,
+    ga.checkouts,
     m.order_count,
     m.gross_revenue,
     m.aov,
