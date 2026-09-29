@@ -74,3 +74,45 @@ back empty. This means:
 This gap closes the same way the Shopify gap would have if we'd used a
 sandbox with no test orders: once real (even read-only) ad account data is
 available, this is the first thing to re-verify.
+
+## GA4
+
+`src/connectors/ga4.py` — talks to the **GA4 Data API**
+(`analyticsdata.googleapis.com`, `runReport`). Written by request, with no
+GA4 property access set up yet — real credentials are being deferred until
+account access is ready.
+
+Key mechanics:
+- **Auth:** a Service Account JSON key, not a simple bearer token like
+  Shopify/Meta. Signing and refreshing the JWT this requires is genuine
+  cryptography we don't want to hand-roll, so we use Google's official
+  `google-auth` library for just that step — everything else in the
+  connector is plain `requests`, same as our other connectors.
+- **Response shape is positional, not keyed.** GA4 returns
+  `dimensionValues`/`metricValues` as parallel arrays lined up with the
+  `dimensions`/`metrics` you requested, not a dict with named fields —
+  `_parse_row()` zips them back together ourselves.
+- **Known simplification:** `addToCarts` and `checkouts` are GA4's raw
+  *event counts*, not deduplicated *session counts*. One visitor can
+  add an item to cart twice in the same session — GA4 would count that as
+  2, but "Sessions with cart additions" (from the target report format)
+  wants 1. Getting the true session-level count needs a second,
+  differently-filtered GA4 query, which isn't built yet. Until it is, the
+  numbers this connector produces for those two columns will run slightly
+  high compared to true session counts.
+
+### Testing status: unverified against a live account
+
+This is the first connector in the project built entirely against
+documented API behavior with **zero live verification** — no GA4 property
+access exists yet. Everything else we've built (Shopify: fully verified
+against real test orders; Meta: plumbing verified live, parsing verified
+synthetically) had at least a live connectivity check. This one has:
+- **Verified:** `_parse_row()`'s parsing logic, against a hand-built
+  example shaped like GA4's documented response.
+- **Not verified at all:** authentication (service account JWT flow),
+  the actual API request/response cycle, error handling.
+
+Treat this connector as higher-risk of needing a real fix, not just
+re-verification, once credentials exist — unlike Shopify/Meta where the
+live plumbing was already proven and only real-data edge cases remained.

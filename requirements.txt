@@ -10,5 +10,9 @@ requests==2.32.3           # HTTP calls to REST APIs
 # Added at Milestone 6 (Excel)
 openpyxl==3.1.5            # write .xlsx reports
 
+# Added when building the GA4 connector — service account JWT auth only
+# (the actual API calls are plain requests, same as our other connectors)
+google-auth==2.35.0
+
 # Added at Milestone 10 (AI)
 anthropic==0.39.0

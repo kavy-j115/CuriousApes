@@ -8,3 +8,8 @@ shopify:
 meta_ads:
   ad_account_id_env: META_AD_ACCOUNT_ID
   access_token_env: META_ACCESS_TOKEN
+
+# ga4: credentials pending real property access -- see .env.example
+# ga4:
+#   property_id_env: GA4_PROPERTY_ID
+#   service_account_file_env: GA4_SERVICE_ACCOUNT_FILE
