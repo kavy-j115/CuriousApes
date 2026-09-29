@@ -41,12 +41,32 @@ display name in as the URL silently breaks every request with a generic
 
 ## Pages
 
-`src/app/page.tsx` — a Server Component (`async function`, runs only on
-the server) that queries `daily_business_metrics` and `clients`, filtered
-by a `?client=` URL search param. `src/app/ClientPicker.tsx` is a small
-Client Component (`"use client"`) that updates that search param via
-`next/navigation`'s `useRouter` — the standard App Router pattern for
-"a control that changes what data the server fetches."
+One page, `src/app/page.tsx` — originally split into a plain "dashboard"
+and a separate "/report" route, consolidated once it became clear the
+dashboard's table was just a subset of the Business Health Report's data
+(both ultimately read Shopify's numbers; `daily_report_metrics` is the
+superset once Meta/GA4 are blended in). Two views of the same underlying
+question didn't need two pages.
+
+The single page reads `daily_report_metrics` (not `daily_business_metrics`
+directly), filtered by `?client=`, `?date=`, and switches between a
+**Report** (table) and **Visualizations** (charts, via Recharts) view via
+`?tab=`, rendered as pill-style tabs using plain `<Link>`s — no client-side
+JS needed for the switch itself, since each tab is just a different URL the
+Server Component re-renders for.
+
+`src/app/ReportControls.tsx` is a Client Component (`"use client"`) that
+updates `client`/`date` search params via `next/navigation`'s `useRouter` —
+the standard App Router pattern for "a control that changes what data the
+server fetches." The client picker only renders once there are 2+ clients
+(pointless UI for a single option); the date picker only applies to the
+Report tab (a single-date filter doesn't mean much for a trend chart).
+
+`?date=` filters to exactly that one day's row (a **live** query against
+current data, not a frozen historical snapshot — if source data is edited
+later, the report reflects the update). Snapshotting was considered and
+deliberately deferred; revisit if "what did we report on day X" ever needs
+to survive a later data correction.
 
 ## Not built yet
 
