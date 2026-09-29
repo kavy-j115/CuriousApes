@@ -30,7 +30,7 @@ query Orders($cursor: String, $queryFilter: String) {
         currentSubtotalPriceSet { shopMoney { amount currencyCode } }
         totalDiscountsSet { shopMoney { amount currencyCode } }
         totalRefundedSet { shopMoney { amount currencyCode } }
-        customer { id email numberOfOrders }
+        customer { id email phone firstName lastName numberOfOrders }
         lineItems(first: 50) {
           edges {
             node {

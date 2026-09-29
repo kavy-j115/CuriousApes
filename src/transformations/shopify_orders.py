@@ -22,6 +22,7 @@ def transform_orders(conn, client_id: str) -> int:
     rows = read_cur.fetchall()
 
     for shopify_order_id, raw in rows:
+        _upsert_customer(write_cur, client_id, raw.get("customer"))
         order_id = _upsert_order(write_cur, client_id, shopify_order_id, raw)
         _replace_line_items(write_cur, order_id, raw["lineItems"]["edges"])
 
@@ -37,6 +38,32 @@ def _money(price_set: dict) -> str:
 
 def _currency(price_set: dict) -> str:
     return price_set["shopMoney"]["currencyCode"]
+
+
+def _upsert_customer(cur, client_id: str, customer: dict | None) -> None:
+    if not customer:
+        return  # guest checkout, no customer record to link
+    shopify_customer_id = customer["id"].rsplit("/", 1)[-1]
+    cur.execute(
+        """
+        INSERT INTO customers (client_id, shopify_customer_id, email, phone, first_name, last_name, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, now())
+        ON CONFLICT (client_id, shopify_customer_id) DO UPDATE SET
+            email = EXCLUDED.email,
+            phone = EXCLUDED.phone,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            updated_at = now();
+        """,
+        (
+            client_id,
+            shopify_customer_id,
+            customer.get("email"),
+            customer.get("phone"),
+            customer.get("firstName"),
+            customer.get("lastName"),
+        ),
+    )
 
 
 def _upsert_order(cur, client_id: str, shopify_order_id: int, raw: dict) -> int:

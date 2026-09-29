@@ -17,5 +17,9 @@ google-auth==2.35.0
 # Added at Milestone 7 (scheduling) — reads config/clients/*.yaml
 PyYAML==6.0.2
 
+# Added for customer segment exports -- parses/splits phone numbers reliably
+# (country codes vary in length: 1, 91, 971... hand-rolled slicing would break)
+phonenumbers==9.0.40
+
 # Added at Milestone 10 (AI)
 anthropic==0.39.0
