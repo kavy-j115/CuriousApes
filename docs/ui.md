@@ -84,17 +84,20 @@ real data inserted into a throwaway client: 3 orders/$300 (Period A) vs.
 2 orders/$500 (Period B) produced exactly the expected deltas
 (-1 order/-33.3%, +$200/+66.7% revenue, +$150/+150.0% AOV).
 
-## "Ask AI" button
+## AI on the dashboard (removed, revisit later)
 
-A floating button (root layout, so it appears on every page) opens
-claude.ai in a small popup window via `window.open()` — a free
-alternative to the API-based AI Analyst (Milestone 10, currently shelved
-over API cost). An iframe embed was considered first and ruled out with a
-direct check, not an assumption: `curl -sI https://claude.ai` shows
-`X-Frame-Options: SAMEORIGIN`, which blocks any third-party site from
-embedding it in an `<iframe>` at all. `window.open()` isn't affected by
-that restriction — it opens a separate window rather than embedding one —
-so that's what this uses instead.
+A floating "Ask AI" button (popup window to claude.ai) was tried and
+removed — the actual want was AI genuinely inline on the dashboard, not a
+separate window. True inline embedding isn't achievable: `curl -sI
+https://claude.ai` confirmed `X-Frame-Options: SAMEORIGIN` (blocks
+`<iframe>` embedding outright), and even proxying their site through our
+own domain would render broken (their CSP ties script execution to
+per-request nonces scoped to their exact domain) and would likely violate
+their terms of service — not something to build around.
+
+The only real path to AI genuinely on the dashboard is our own chat panel
+calling the Anthropic API directly (Milestone 10 territory, real
+per-token cost) — deferred for now, to revisit later.
 
 ## Not built yet
 
