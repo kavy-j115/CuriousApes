@@ -49,24 +49,40 @@ superset once Meta/GA4 are blended in). Two views of the same underlying
 question didn't need two pages.
 
 The single page reads `daily_report_metrics` (not `daily_business_metrics`
-directly), filtered by `?client=`, `?date=`, and switches between a
-**Report** (table) and **Visualizations** (charts, via Recharts) view via
-`?tab=`, rendered as pill-style tabs using plain `<Link>`s — no client-side
-JS needed for the switch itself, since each tab is just a different URL the
-Server Component re-renders for.
+directly), filtered by `?client=`/`?from=`/`?to=`, and switches between
+**Report** (table), **Visualizations** (charts, via Recharts), and
+**Compare** (two arbitrary periods side by side) via `?tab=`, rendered as
+pill-style tabs using plain `<Link>`s — no client-side JS needed for the
+switch itself, since each tab is just a different URL the Server Component
+re-renders for.
 
 `src/app/ReportControls.tsx` is a Client Component (`"use client"`) that
-updates `client`/`date` search params via `next/navigation`'s `useRouter` —
-the standard App Router pattern for "a control that changes what data the
-server fetches." The client picker only renders once there are 2+ clients
-(pointless UI for a single option); the date picker only applies to the
-Report tab (a single-date filter doesn't mean much for a trend chart).
+updates `client`/`from`/`to` search params via `next/navigation`'s
+`useRouter` — the standard App Router pattern for "a control that changes
+what data the server fetches." The client picker only renders once there
+are 2+ clients (pointless UI for a single option); the date range only
+applies to the Report tab.
 
-`?date=` filters to exactly that one day's row (a **live** query against
-current data, not a frozen historical snapshot — if source data is edited
-later, the report reflects the update). Snapshotting was considered and
-deliberately deferred; revisit if "what did we report on day X" ever needs
-to survive a later data correction.
+`?from=`/`?to=` filter live against current data, not a frozen historical
+snapshot — if source data is edited later, the report reflects the update.
+Snapshotting was considered and deliberately deferred; revisit if "what did
+we report on day X" ever needs to survive a later data correction. `from
+== to` (or `to` omitted) shows exactly that one day's row with no Total
+row; a genuine range adds a Total row using the same weighted-ratio math
+as the Excel report (`src/lib/reportMath.ts`, shared with the Compare tab).
+
+### Compare tab
+
+Built for comparing before/after periods around an incrementality test
+(pick Period A and Period B as independent date ranges, see both periods'
+totals side by side with the delta and delta %). `src/app/CompareView.tsx`
+reuses `computeTotal()` from `src/lib/reportMath.ts` — the same weighted
+math, run twice and diffed, rather than separate comparison logic.
+MTD/LMTD are excluded from this view (they're calendar-month-cumulative
+concepts, meaningless for an arbitrary comparison range). Verified against
+real data inserted into a throwaway client: 3 orders/$300 (Period A) vs.
+2 orders/$500 (Period B) produced exactly the expected deltas
+(-1 order/-33.3%, +$200/+66.7% revenue, +$150/+150.0% AOV).
 
 ## Not built yet
 
