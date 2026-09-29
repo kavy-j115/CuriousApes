@@ -7,23 +7,27 @@ type Client = { client_id: string; display_name: string };
 export default function ReportControls({
   clients,
   selectedClient,
-  selectedDate,
+  selectedFrom,
+  selectedTo,
   tab,
 }: {
   clients: Client[];
   selectedClient: string;
-  selectedDate: string;
+  selectedFrom: string;
+  selectedTo: string;
   tab: string;
 }) {
   const router = useRouter();
 
-  function navigate(next: { client?: string; date?: string }) {
+  function navigate(next: { client?: string; from?: string; to?: string }) {
     const params = new URLSearchParams();
     params.set("tab", tab);
     const client = next.client ?? selectedClient;
-    const date = next.date ?? selectedDate;
+    const from = next.from ?? selectedFrom;
+    const to = next.to ?? selectedTo;
     if (client) params.set("client", client);
-    if (date) params.set("date", date);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
     router.push(`/?${params.toString()}`);
   }
 
@@ -33,13 +37,22 @@ export default function ReportControls({
         <>
           <input
             type="date"
-            value={selectedDate}
-            onChange={(e) => navigate({ date: e.target.value })}
+            value={selectedFrom}
+            onChange={(e) => navigate({ from: e.target.value })}
             className="rounded border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            aria-label="From date"
           />
-          {selectedDate && (
+          <span className="text-zinc-500">–</span>
+          <input
+            type="date"
+            value={selectedTo}
+            onChange={(e) => navigate({ to: e.target.value })}
+            className="rounded border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            aria-label="To date"
+          />
+          {(selectedFrom || selectedTo) && (
             <button
-              onClick={() => navigate({ date: "" })}
+              onClick={() => navigate({ from: "", to: "" })}
               className="text-xs text-zinc-500 hover:underline"
             >
               clear

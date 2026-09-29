@@ -8,6 +8,7 @@ type ReportRow = {
   report_date: string;
   sessions: number | null;
   add_to_carts: number | null;
+  checkouts: number | null;
   order_count: number;
   gross_revenue: string;
   aov: string;
@@ -26,8 +27,8 @@ function fmtNum(v: number | string | null): string {
   return Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-function fmtPct(v: string | null): string {
-  if (v === null) return "—";
+function fmtPct(v: number | string | null): string {
+  if (v === null || v === undefined) return "—";
   return `${(Number(v) * 100).toFixed(1)}%`;
 }
 
@@ -48,12 +49,57 @@ const REPORT_COLUMNS: { label: string; key: keyof ReportRow; fmt: (r: ReportRow)
   { label: "LMTD", key: "lmtd_sale", fmt: (r) => fmtNum(r.lmtd_sale) },
 ];
 
+// Mirrors the Excel report's Total row: SUM for absolute counts/amounts,
+// a true weighted ratio (not an average-of-daily-ratios) for AOV/PROAS/%s.
+function computeTotal(rows: ReportRow[]): ReportRow {
+  // null (not 0) when every contributing row was null -- "no data connected"
+  // and "connected, genuinely zero" are different claims, same rule as the
+  // Excel report (see docs/reporting.md).
+  const sum = (f: (r: ReportRow) => number | string | null): number | null => {
+    const values = rows.map(f).filter((v) => v !== null && v !== undefined);
+    if (values.length === 0) return null;
+    return values.reduce((acc: number, v) => acc + Number(v), 0);
+  };
+
+  const sessions = sum((r) => r.sessions);
+  const addToCarts = sum((r) => r.add_to_carts);
+  const checkouts = sum((r) => r.checkouts);
+  const orderCount = sum((r) => r.order_count) ?? 0;
+  const grossRevenue = sum((r) => r.gross_revenue) ?? 0;
+  const amountSpent = sum((r) => r.amount_spent);
+  const purchaseValue = sum((r) => r.purchase_value);
+
+  const ratio = (numerator: number | null, denominator: number | null) =>
+    numerator !== null && denominator ? numerator / denominator : null;
+
+  return {
+    client_id: rows[0]?.client_id ?? "",
+    report_date: "Total",
+    sessions,
+    add_to_carts: addToCarts,
+    checkouts,
+    order_count: orderCount,
+    gross_revenue: String(grossRevenue),
+    aov: String(ratio(grossRevenue, orderCount) ?? 0),
+    amount_spent: amountSpent === null ? null : String(amountSpent),
+    purchase_value: purchaseValue === null ? null : String(purchaseValue),
+    proas: ratio(purchaseValue, amountSpent) as unknown as string,
+    atc_pct: ratio(addToCarts, sessions) as unknown as string,
+    conversion_pct: ratio(orderCount, sessions) as unknown as string,
+    checkout_pct: ratio(checkouts, sessions) as unknown as string,
+    // MTD/LMTD are already-cumulative figures, not additive across days --
+    // the most recent row's value is the meaningful one for a range total.
+    mtd_sale: rows[0]?.mtd_sale ?? "0",
+    lmtd_sale: rows[0]?.lmtd_sale ?? null,
+  };
+}
+
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; date?: string; tab?: string }>;
+  searchParams: Promise<{ client?: string; from?: string; to?: string; tab?: string }>;
 }) {
-  const { client, date, tab: tabParam } = await searchParams;
+  const { client, from, to, tab: tabParam } = await searchParams;
   const tab = tabParam === "viz" ? "viz" : "report";
 
   const { data: clients } = await supabase
@@ -62,7 +108,11 @@ export default async function Home({
     .order("display_name");
 
   const selectedClient = client ?? clients?.[0]?.client_id ?? "";
-  const selectedDate = date ?? "";
+  const selectedFrom = from ?? "";
+  const selectedTo = to ?? "";
+
+  const isSingleDay = !!selectedFrom && (!selectedTo || selectedTo === selectedFrom);
+  const isRange = !!selectedFrom && !!selectedTo && selectedTo !== selectedFrom;
 
   let query = supabase
     .from("daily_report_metrics")
@@ -70,10 +120,20 @@ export default async function Home({
     .eq("client_id", selectedClient)
     .order("report_date", { ascending: false });
 
-  query = selectedDate ? query.eq("report_date", selectedDate) : query.limit(28);
+  if (isSingleDay) {
+    query = query.eq("report_date", selectedFrom);
+  } else if (isRange) {
+    query = query.gte("report_date", selectedFrom).lte("report_date", selectedTo);
+  } else {
+    query = query.limit(28);
+  }
 
   const { data, error } = await query;
   const rows = (data as ReportRow[] | null) ?? [];
+  const showTotal = !isSingleDay && rows.length > 1;
+
+  const tabHref = (t: string) =>
+    `/?tab=${t}${selectedClient ? `&client=${selectedClient}` : ""}${selectedFrom ? `&from=${selectedFrom}` : ""}${selectedTo ? `&to=${selectedTo}` : ""}`;
 
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans dark:bg-black">
@@ -87,7 +147,7 @@ export default async function Home({
               {(["report", "viz"] as const).map((t) => (
                 <Link
                   key={t}
-                  href={`/?tab=${t}${selectedClient ? `&client=${selectedClient}` : ""}${selectedDate ? `&date=${selectedDate}` : ""}`}
+                  href={tabHref(t)}
                   className={`rounded-full px-4 py-1 text-sm font-medium transition-colors ${
                     tab === t
                       ? "bg-white text-black shadow dark:bg-zinc-950 dark:text-zinc-50"
@@ -102,7 +162,8 @@ export default async function Home({
           <ReportControls
             clients={clients ?? []}
             selectedClient={selectedClient}
-            selectedDate={selectedDate}
+            selectedFrom={selectedFrom}
+            selectedTo={selectedTo}
             tab={tab}
           />
         </div>
@@ -137,6 +198,15 @@ export default async function Home({
                     ))}
                   </tr>
                 ))}
+                {showTotal && (
+                  <tr className="border-t-2 border-zinc-400 font-semibold dark:border-zinc-600">
+                    {REPORT_COLUMNS.map((c) => (
+                      <td key={c.key} className="whitespace-nowrap px-2 py-1">
+                        {c.fmt(computeTotal(rows))}
+                      </td>
+                    ))}
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
