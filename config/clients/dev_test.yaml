@@ -4,3 +4,7 @@ display_name: "Dev/Test Store"
 shopify:
   store_domain_env: SHOPIFY_STORE_DOMAIN
   access_token_env: SHOPIFY_ACCESS_TOKEN
+
+meta_ads:
+  ad_account_id_env: META_AD_ACCOUNT_ID
+  access_token_env: META_ACCESS_TOKEN

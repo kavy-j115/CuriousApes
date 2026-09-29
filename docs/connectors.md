@@ -33,3 +33,44 @@ Stores → Add store), with orders placed manually via the built-in "Bogus
 Gateway" test payment processor. This gave us real order JSON shapes to
 build and verify against before this connector ever touches a real client's
 store.
+
+## Meta Ads
+
+`src/connectors/meta_ads.py` — talks to the **Marketing API**'s Ads Insights
+endpoint (`/act_{ad_account_id}/insights`).
+
+Key mechanics:
+- **Auth:** a Business Manager **System User** token (Business Settings →
+  Users → System Users), not a normal OAuth user token. A user token expires
+  in ~60 days and needs a human to re-authenticate; a System User token can
+  be set to never expire, which is what an unattended scheduled job needs.
+- **Pagination:** a full "next" URL returned in the response's `paging`
+  object — different again from Shopify's cursor-token style. We just follow
+  the URL Meta gives us rather than constructing the next request ourselves.
+- **Rate limiting:** usage percentage reported in the
+  `x-business-use-case-usage` response header; the connector backs off if
+  any metric in it is above 90%.
+- **The `actions` field is not fixed columns.** Meta returns a list like
+  `[{"action_type": "purchase", "value": "12"}, ...]` rather than a
+  `purchases` field directly. `extract_action_metric()` pulls one specific
+  `action_type` out of that list. Which exact string means "a real purchase"
+  can vary by how a client's pixel is configured (`purchase` vs
+  `omni_purchase` vs `offsite_conversion.fb_pixel_purchase` all show up in
+  practice) — we default to `purchase` and expect to adjust this per-client
+  once real data is flowing.
+
+### Testing limitation (documented honestly, not hidden)
+
+Unlike Shopify's Bogus Gateway, a Meta test ad account does not generate
+realistic delivery data — no real audience sees test ads, so insights come
+back empty. This means:
+- **Verified live:** authentication, request construction, and pagination
+  (confirmed against a real test ad account — correctly returns zero rows,
+  no errors).
+- **Verified only against synthetic data:** `extract_action_metric()`'s
+  parsing logic, checked against a hand-built example shaped like Meta's
+  documented response format, not live data.
+
+This gap closes the same way the Shopify gap would have if we'd used a
+sandbox with no test orders: once real (even read-only) ad account data is
+available, this is the first thing to re-verify.
