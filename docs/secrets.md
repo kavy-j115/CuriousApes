@@ -65,10 +65,44 @@ credentials get added — no code changes, no GitHub-side setup.
 ## Naming convention
 
 `<client_id>.<source>.<field>`, e.g. `acme.shopify.access_token`,
-`acme.meta_ads.access_token`, `acme.ga4.service_account_json` (the GA4
-service account key is stored as its raw JSON text and `json.loads()`'d
-by the caller — see src/connectors/ga4.py, which takes a parsed dict
-rather than a file path specifically so the key is never written to disk).
+`acme.ga4.service_account_json` (the GA4 service account key is stored as
+its raw JSON text and `json.loads()`'d by the caller — see
+src/connectors/ga4.py, which takes a parsed dict rather than a file path
+specifically so the key is never written to disk).
+
+**Meta is the one exception: one shared secret, not per-client.**
+`agency.meta_ads.access_token`, referenced by every client's
+`access_token_secret` field, not a unique name each. This is safe because
+Shopify and Meta scope access fundamentally differently: a Shopify custom
+app's token is physically tied to the one store that created it and can
+never authenticate against another. A Meta System User's token isn't
+scoped that way at all — a single System User can be granted access to
+many ad accounts across many Business Managers, and Meta checks
+permission per-request ("does this token's System User have access to
+*this specific* `act_...` ID"), not per-token. So one token already
+legitimately works for every client whose ad account has been shared with
+the agency's Business Manager — no code change was needed, only pointing
+every client's config at the same secret name.
+
+**The trade-off, stated plainly, not just the upside:** if this one token
+is ever compromised, an attacker reads every client's ad data in one
+shot, not just one client's — a larger blast radius than per-client
+tokens would have. There's a subtler cost too: a bug in our own code that
+queries the *wrong* client's `ad_account_id` would, with a per-client
+token, simply fail (no permission) — with the shared token, that same bug
+would silently succeed, leaking one client's data into another's report.
+Per-client tokens are a real safety net against our own mistakes, not
+just security theater. Chosen anyway because RLS already protects the
+database layer independently, and the onboarding-friction savings are
+real — but this is a considered trade, not a strictly-better change.
+
+**Onboarding a new client's Meta access now needs zero new credentials at
+all:** they approve a Business Manager access request on Meta's side (a
+few clicks, no API/token knowledge required), you add their
+`ad_account_id` to their config file. Compare this to Shopify, which still
+needs a real token generated per client until a proper OAuth app exists
+(see docs/architecture.md's future-work notes) — Shopify's per-store
+token scoping means there's no equivalent shortcut available today.
 
 ## Migration notes
 

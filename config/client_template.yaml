@@ -18,8 +18,11 @@ shopify:
   access_token_secret: example-brand.shopify.access_token
 
 meta_ads:
-  ad_account_id: ""
-  access_token_secret: example-brand.meta_ads.access_token
+  ad_account_id: ""   # get this once the client shares their ad account with the agency's Business Manager -- no token needed from them at all
+  # Shared across every client by default -- see docs/secrets.md "Meta: one
+  # shared token". Only give a client their own separate secret name here if
+  # you have a specific reason not to use the shared one.
+  access_token_secret: agency.meta_ads.access_token
 
 # ga4:
 #   property_id: ""

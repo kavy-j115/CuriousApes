@@ -8,7 +8,9 @@ shopify:
 
 meta_ads:
   ad_account_id: "2333349140733915"
-  access_token_secret: dev_test.meta_ads.access_token   # Vault secret name
+  # Shared across every client, not unique to dev_test -- see docs/secrets.md
+  # "Meta: one shared token" for why this is safe and what it costs.
+  access_token_secret: agency.meta_ads.access_token
 
 # ga4:
 #   property_id: ""

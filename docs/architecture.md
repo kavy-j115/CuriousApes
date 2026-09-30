@@ -63,6 +63,25 @@ The existing retention dashboard, and any future BI tool, should be able to
 read from PostgreSQL views in the analytics layer without us rebuilding
 anything. We will not modify the retention dashboard unless explicitly asked.
 
+## Future work: a real Shopify OAuth app
+
+Onboarding currently needs a client to manually create a custom app in
+their own Shopify admin and hand us a token — the only credential in this
+project that still requires a human on the client's side to understand
+what an API token is (Meta was simplified away from this, see
+docs/secrets.md; GA4 never had this problem, since it only needs the
+client to grant our service account's email Viewer access).
+
+The real fix is a proper Shopify **OAuth app**: the client clicks one
+install link, sees Shopify's own permission screen, clicks Install — the
+access token then flows directly server-to-server between Shopify and us,
+with no copying involved at all. This is a genuinely bigger build than
+everything else in this list (needs a public HTTPS OAuth callback
+endpoint, Partner Dashboard app configuration, CSRF/`state` handling) and
+is coupled to having a real deployed URL — worth doing before onboarding
+many real clients, but deliberately scoped as its own project rather than
+squeezed in alongside smaller changes.
+
 ## Roadmap
 
 See project milestones (tracked in conversation / project board) — in short:
