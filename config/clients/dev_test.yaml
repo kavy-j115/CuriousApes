@@ -22,3 +22,8 @@ thresholds:
   revenue_change_pct: 10
   cac_change_pct: 15
   roas_change_pct: 10
+
+notifications:
+  # E.164 phone numbers -- not secret (useless without control of the
+  # agency's WhatsApp Business number itself), so plain values here is fine.
+  whatsapp_recipients: []

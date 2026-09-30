@@ -70,10 +70,12 @@ Meta-side account/app restriction (the same account that needed review
 once before in this project) and needs checking in Meta's Business
 Settings/App Dashboard, not a code fix.
 
+## Sending: WhatsApp
+
+Alerts are also sent over WhatsApp — see docs/notifications.md for the
+full design (why WhatsApp, why templates are required, the agency-level
+sender vs. per-client recipients split, and delivery semantics).
+
 ## Not built yet
 
-Actually sending a notification (email/Slack/WhatsApp) when an alert
-fires — alerts are currently detected and stored, not pushed anywhere.
-UI display of the `alerts` table. A decision on which notification
-channel to use needs the user's input (which service, if any, they
-already use) before building that piece.
+UI display of the `alerts` table (see the pending role-based UI work).

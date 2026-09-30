@@ -1,8 +1,12 @@
-# Segment Export UI (`/segments`)
+# Segment Export UI (`/dashboard/segments`)
 
 The browser-based version of `docs/segments.md`'s ConvertWay export —
-built into the UI so this doesn't require the command line. Reachable
-from the main dashboard via "Segment Export →".
+built into the UI so this doesn't require the command line. Reachable from
+the dashboard sidebar's "Segments" item — admin/user roles only, gated
+both in the sidebar (hidden for `client`, see docs/ui.md) and server-side
+in the page itself (`assertRole()`), since a brand owner shouldn't be
+exporting their own customer PII themselves. The old standalone `/segments`
+route now just redirects here.
 
 ## Why entirely client-side
 

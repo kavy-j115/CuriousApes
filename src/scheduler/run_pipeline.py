@@ -25,6 +25,7 @@ import psycopg2
 import psycopg2.extras
 
 from src.config.clients import load_all, get_value, resolve_secret
+from src.config.whatsapp_config import load_whatsapp_config
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
 from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
@@ -32,6 +33,7 @@ from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
 from src.reports.storage import ensure_bucket_exists, upload_report
 from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_failure_alert
+from src.notifications.dispatch import send_pending_alerts
 
 load_dotenv()
 
@@ -45,7 +47,7 @@ class StepResult:
     detail: str
 
 
-def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
+def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None) -> list[StepResult]:
     client_id = config["client_id"]
     results: list[StepResult] = []
 
@@ -138,6 +140,18 @@ def run_for_client(conn, config: dict, since: str) -> list[StepResult]:
         if r.status == "error":
             save_sync_failure_alert(conn, client_id, date.today(), r.step, r.detail)
 
+    recipients = get_value(config, "notifications", "whatsapp_recipients") or []
+    if not whatsapp_config:
+        results.append(StepResult("WhatsApp notify", "skipped", "config/whatsapp.yaml not set up"))
+    elif not recipients:
+        results.append(StepResult("WhatsApp notify", "skipped", "no whatsapp_recipients for this client"))
+    else:
+        sent_count, send_errors = send_pending_alerts(conn, client_id, recipients, whatsapp_config)
+        for alert_type, err in send_errors:
+            results.append(StepResult(f"WhatsApp notify ({alert_type})", "error", err))
+        if sent_count or not send_errors:
+            results.append(StepResult("WhatsApp notify", "ok", f"{sent_count} alert(s) sent to {len(recipients)} recipient(s)"))
+
     return results
 
 
@@ -166,9 +180,11 @@ def main():
         print("No clients found in config/clients/*.yaml -- nothing to do.")
         return
 
+    whatsapp_config = load_whatsapp_config(conn)
+
     any_errors = False
     for config in clients:
-        results = run_for_client(conn, config, since)
+        results = run_for_client(conn, config, since, whatsapp_config)
         print_summary(config["client_id"], results)
         if any(r.status == "error" for r in results):
             any_errors = True
