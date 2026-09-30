@@ -70,19 +70,23 @@ its raw JSON text and `json.loads()`'d by the caller — see
 src/connectors/ga4.py, which takes a parsed dict rather than a file path
 specifically so the key is never written to disk).
 
-**Meta is the one exception: one shared secret, not per-client.**
-`agency.meta_ads.access_token`, referenced by every client's
-`access_token_secret` field, not a unique name each. This is safe because
-Shopify and Meta scope access fundamentally differently: a Shopify custom
-app's token is physically tied to the one store that created it and can
-never authenticate against another. A Meta System User's token isn't
-scoped that way at all — a single System User can be granted access to
-many ad accounts across many Business Managers, and Meta checks
-permission per-request ("does this token's System User have access to
-*this specific* `act_...` ID"), not per-token. So one token already
-legitimately works for every client whose ad account has been shared with
-the agency's Business Manager — no code change was needed, only pointing
-every client's config at the same secret name.
+**Meta and GA4 are the exceptions: one shared secret each, not
+per-client.** `agency.meta_ads.access_token` and
+`agency.ga4.service_account_json`, referenced by every client's
+`access_token_secret`/`service_account_secret` field, not a unique name
+each. This is safe because Shopify scopes access fundamentally
+differently from the other two: a Shopify custom app's token is
+physically tied to the one store that created it and can never
+authenticate against another. A Meta System User's token, and a GA4
+service account's identity, aren't scoped that way at all — one System
+User can be granted access to many ad accounts across many Business
+Managers, and one service account can be granted Viewer access to many
+GA4 properties across many Google accounts. Both platforms check
+permission per-request ("does this identity have access to *this
+specific* account/property"), not per-credential. So one credential
+already legitimately works for every client who's granted it access — no
+code change was needed for either, only pointing every client's config at
+the same secret name.
 
 **The trade-off, stated plainly, not just the upside:** if this one token
 is ever compromised, an attacker reads every client's ad data in one

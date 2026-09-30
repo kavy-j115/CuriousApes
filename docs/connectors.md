@@ -78,9 +78,16 @@ available, this is the first thing to re-verify.
 ## GA4
 
 `src/connectors/ga4.py` — talks to the **GA4 Data API**
-(`analyticsdata.googleapis.com`, `runReport`). Written by request, with no
-GA4 property access set up yet — real credentials are being deferred until
-account access is ready.
+(`analyticsdata.googleapis.com`, `runReport`).
+
+**Credential is shared across every client, not per-client** — same
+reasoning as Meta's `agency.meta_ads.access_token` (see docs/secrets.md).
+The service account's identity never changes; only *which* GA4 properties
+have granted it Viewer access changes per client. Onboarding a new
+client's GA4 access needs zero new credentials: they add the shared
+service account's email as a Viewer on their property (copy-paste, no
+API/token knowledge required), the agency adds their `property_id` to
+config.
 
 Key mechanics:
 - **Auth:** a Service Account JSON key, not a simple bearer token like
@@ -101,18 +108,33 @@ Key mechanics:
   numbers this connector produces for those two columns will run slightly
   high compared to true session counts.
 
-### Testing status: unverified against a live account
+### Testing status: verified live
 
-This is the first connector in the project built entirely against
-documented API behavior with **zero live verification** — no GA4 property
-access exists yet. Everything else we've built (Shopify: fully verified
-against real test orders; Meta: plumbing verified live, parsing verified
-synthetically) had at least a live connectivity check. This one has:
-- **Verified:** `_parse_row()`'s parsing logic, against a hand-built
-  example shaped like GA4's documented response.
-- **Not verified at all:** authentication (service account JWT flow),
-  the actual API request/response cycle, error handling.
+Originally built with zero live verification (documented API behavior
+only), since resolved. Getting there took two real dead ends worth
+recording, since they're not obvious in advance:
 
-Treat this connector as higher-risk of needing a real fix, not just
-re-verification, once credentials exist — unlike Shopify/Meta where the
-live plumbing was already proven and only real-data edge cases remained.
+- **Google's public GA4 demo account (Google Merchandise Store) turned
+  out to be a dead end for this, for two separate reasons.** First,
+  Viewer-only access (the only access level a normal person gets by
+  adding the demo account) can't grant *anyone else* — including a
+  service account — access to it; "Property Access Management" doesn't
+  even appear as an option for a Viewer, not just error when tried.
+  Second, even querying it directly via Google's own official Query
+  Explorer tool (using a personal login, not our service account) hit a
+  `429`: `"This property is denied access to the API"` — a shared quota
+  on Google's side, since countless developers worldwide hit this same
+  public demo property through tutorials and tools just like this one.
+  Neither issue was something to work around; both meant abandoning the
+  demo account entirely.
+- **Fix: a real, self-created GA4 property.** Since you're the owner,
+  Property Access Management actually works, and there's no shared-quota
+  problem on a private property nobody else is querying.
+
+**Verified directly against this real property** (property ID
+`556836826`, zero real traffic — correctly returns 0 rows, not an error):
+authentication (the service account JWT flow actually works), the real
+HTTP request/response cycle, and `fetch_daily_ecommerce_metrics()`'s full
+path with no exceptions. Also verified as part of the full orchestrator
+run (`src/scheduler/run_pipeline.py`), alongside Shopify and Meta in the
+same run — GA4 sync now shows `[OK]` like every other configured source. 

@@ -25,8 +25,9 @@ meta_ads:
   access_token_secret: agency.meta_ads.access_token
 
 # ga4:
-#   property_id: ""
-#   service_account_secret: example-brand.ga4.service_account_json
+#   property_id: ""   # get this once the client adds our service account's email as a Viewer on their GA4 property -- no token/key from them at all
+#   # Shared across every client by default, same as Meta -- see docs/secrets.md.
+#   service_account_secret: agency.ga4.service_account_json
 
 thresholds:
   revenue_change_pct: 10

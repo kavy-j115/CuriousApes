@@ -12,9 +12,11 @@ meta_ads:
   # "Meta: one shared token" for why this is safe and what it costs.
   access_token_secret: agency.meta_ads.access_token
 
-# ga4:
-#   property_id: ""
-#   service_account_secret: dev_test.ga4.service_account_json
+ga4:
+  property_id: "556836826"
+  # Shared across every client, not unique to dev_test -- same reasoning as
+  # Meta's agency.meta_ads.access_token (see docs/secrets.md).
+  service_account_secret: agency.ga4.service_account_json
 
 thresholds:
   revenue_change_pct: 10
