@@ -18,12 +18,6 @@ ga4:
   # Meta's agency.meta_ads.access_token (see docs/secrets.md).
   service_account_secret: agency.ga4.service_account_json
 
-thresholds:
-  revenue_change_pct: 10
-  cac_change_pct: 15
-  roas_change_pct: 10
-
-notifications:
-  # E.164 phone numbers -- not secret (useless without control of the
-  # agency's WhatsApp Business number itself), so plain values here is fine.
-  whatsapp_recipients: []
+# Alert thresholds and WhatsApp recipients moved to the database
+# (sql/018_client_notifications.sql) -- managed from the admin Clients
+# page in the web UI now, not here. See docs/secrets.md.

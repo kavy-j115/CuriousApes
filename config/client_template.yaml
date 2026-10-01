@@ -29,13 +29,6 @@ meta_ads:
 #   # Shared across every client by default, same as Meta -- see docs/secrets.md.
 #   service_account_secret: agency.ga4.service_account_json
 
-thresholds:
-  revenue_change_pct: 10
-  roas_change_pct: 10
-  cac_change_pct: 15
-
-notifications:
-  # Who gets this client's alerts on WhatsApp, in E.164 format
-  # (e.g. "+919876543210"). Requires config/whatsapp.yaml to be set up
-  # once for the whole agency -- see that file. Leave empty to disable.
-  whatsapp_recipients: []
+# Alert thresholds and WhatsApp recipients are set from the admin Clients
+# page in the web UI after this client exists in the database (not here --
+# see sql/018_client_notifications.sql and docs/secrets.md).

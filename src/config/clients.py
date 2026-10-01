@@ -28,15 +28,40 @@ from src.config.vault import get_secret
 CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "clients"
 
 
-def load_all() -> list[dict]:
+def load_all(conn=None) -> list[dict]:
     """Returns one dict per client config file, each with a resolved
-    'client_id' at minimum. Skips a file if its client_id is missing."""
+    'client_id' at minimum. Skips a file if its client_id is missing.
+
+    thresholds/notifications.whatsapp_recipients are overlaid from the
+    `clients` table (sql/018_client_notifications.sql) when `conn` is
+    given, OVERWRITING whatever a YAML file might still have under those
+    same keys -- these moved to being admin-UI-managed (an operational
+    setting, not a credential or identifier) rather than git-tracked
+    config, so the database is now the source of truth for them. Every
+    existing caller of get_value(config, "thresholds") / get_value(config,
+    "notifications", "whatsapp_recipients") keeps working unchanged, since
+    this merges into the exact same dict shape they already expect."""
     clients = []
     for path in sorted(CONFIG_DIR.glob("*.yaml")):
         with open(path) as f:
             config = yaml.safe_load(f)
         if config and config.get("client_id"):
             clients.append(config)
+
+    if conn is not None:
+        cur = conn.cursor()
+        for config in clients:
+            cur.execute(
+                "SELECT alert_thresholds, whatsapp_recipients FROM clients WHERE client_id = %s;",
+                (config["client_id"],),
+            )
+            row = cur.fetchone()
+            if row:
+                alert_thresholds, whatsapp_recipients = row
+                config["thresholds"] = alert_thresholds or {}
+                config["notifications"] = {"whatsapp_recipients": list(whatsapp_recipients or [])}
+        cur.close()
+
     return clients
 
 

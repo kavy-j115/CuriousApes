@@ -94,3 +94,46 @@ authorized download actually succeeding, since that needs both a real
 logged-in session and `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (neither
 set yet) — the code fails clearly (a 503 with an explicit message) rather
 than crashing if the storage credentials are missing.
+
+## DHR (Daily/Weekly/Monthly over WhatsApp)
+
+`src/reports/dhr.py` sends the same Business Health Report over WhatsApp
+instead of (or alongside) the on-demand download — see docs/notifications.md
+for the WhatsApp/Twilio side. Reuses `generate_report()` unchanged: a
+"weekly" or "monthly" DHR is just that same function given a wider range
+of `daily_report_metrics` rows (last 7 days, or month-to-date), which
+*already* produces one row per day plus a weighted Total row — confirmed
+by reading the function rather than assumed, so no separate aggregation
+logic was needed for the rollup periods.
+
+### report_config now reaches Python too
+
+`src/reports/report_columns.py` mirrors `web/src/lib/reportColumns.ts`'s
+metric catalogue and default set by hand (two languages, no shared schema
+file) — `resolve_columns()`/`resolve_roas_thresholds()` turn a client's
+`report_config` (read via `src/config/report_config.py`) into the same
+`(label, db_column, number_format)` tuples `generate_report()` always
+took, so both the on-demand Excel download and the DHR now match what
+that client's web Reports page shows, not a separately-fixed format.
+
+`generate_report()`'s Total-row ratio formulas (AOV, PROAS, ATC%, etc.)
+each depend on two other columns (e.g. AOV needs both `gross_revenue` and
+`order_count` present) — a client's config can legally omit one of those
+while keeping the ratio column. Verified directly: dropping `order_count`
+from a test config left AOV's Total cell blank rather than crashing or
+computing a wrong number, and a config with no `proas` column correctly
+skips the conditional-formatting block entirely instead of erroring on a
+missing column lookup. PROAS's color scale is now anchored to the
+client's actual `roasThresholds` (`good`/`danger`) instead of an
+auto data-driven min/max, so the Excel/DHR coloring agrees with the same
+client's web Reports page instead of two independently-scaled gradients
+for the same number.
+
+Delivery needs a signed Storage URL (`storage.create_signed_url()`), not
+a direct upload, because the `reports` bucket is deliberately private
+(see "Storage upload" above) but Twilio's servers need to fetch the file
+over plain HTTP to attach it to a WhatsApp message — a 1-hour-expiry
+signed URL is the one deliberate, short-lived exception to "never public."
+
+**Not yet verified live** — needs both `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+and a configured Twilio sender (docs/notifications.md), neither set up yet.

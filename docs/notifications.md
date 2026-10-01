@@ -8,9 +8,11 @@ Cloud API, reusing the agency's existing Meta Business Manager — switched
 to **Twilio** because testing needed a WhatsApp-enabled phone number
 verified in that Business Manager, which wasn't available yet. Twilio
 provides a free **Sandbox** number that works immediately for development
-(join via a code, no business verification step), unblocking testing now;
-a real approved Twilio WhatsApp sender can replace the sandbox later with
-no code change, just new config values.
+(join via a code, no business verification step) — though as the section
+below explains, "works immediately" turned out to need more than was
+first assumed; the send functions still need a real code change (not
+just new config values) before either the Sandbox or a real sender will
+actually deliver a message.
 
 ## Why alert detection and alert *sending* are two separate steps
 
@@ -32,20 +34,35 @@ every single run on the same day. `send_pending_alerts()` instead queries
 whenever it's first detected, no matter how many times the pipeline reruns
 that day.
 
-## Free-form text, for now
+## Templates required -- correction from an earlier wrong assumption
 
-Meta's WhatsApp API requires a pre-approved message template to send
-outside a 24-hour customer-service window — a real platform constraint an
-unattended daily job can't work around. Twilio's **Sandbox** doesn't have
-that restriction; it accepts plain free-form text, which is why
-`send_whatsapp_alert()` just sends the alert message directly, no
-template involved.
+This doc originally claimed Twilio's Sandbox accepts plain free-form
+`Body` text with no template, unlike Meta. **That was wrong, found out
+during live testing, not assumed away a second time:** sending a
+`Body`-only message to the Sandbox fails with Twilio error 21654
+("ContentSid Required"), even with an open 24-hour session window with
+the recipient. The real rule, confirmed against Twilio's own docs: **the
+Sandbox only accepts outbound messages built from one of Twilio's 3
+pre-built Content Templates**, referenced by `ContentSid` (+
+`ContentVariables` for the template's placeholders) — never a raw `Body`
+string. `send_whatsapp_alert()` currently still sends `Body`-only and
+**will fail every time against the Sandbox** until this is fixed.
 
-**This changes once the sandbox is replaced with a real approved WhatsApp
-sender** (Twilio's own production WhatsApp Business API has the same
-template requirement Meta's does, via Twilio Content Templates) — that's
-a real constraint to revisit before relying on this for production
-alerting, not something this switch avoided permanently.
+This is a stricter version of the same constraint Meta always had
+(template required outside a session window) — Twilio's Sandbox just
+narrows it further to "always, even inside a session window, and only
+from a fixed set of 3 generic templates you can't customize the wording
+of." A **real** (non-Sandbox) Twilio WhatsApp sender uses Twilio's own
+Content Template Builder instead, where you can create and get approved
+a template with whatever wording the alert/DHR messages actually need
+(the way the original Meta design was built) — that's the real path
+forward once a verified production number exists, not the Sandbox's 3
+fixed demo templates.
+
+**Status: paused.** Testing is on hold until a real verified number is
+available (user's decision) — `send_whatsapp_alert()`/`send_whatsapp_media()`
+are not yet updated for the ContentSid requirement, since what a real
+sender's approved template will look like isn't decided yet either.
 
 ## Configuration split: agency-level sender vs. per-client recipients
 
@@ -91,15 +108,21 @@ segment exports, see docs/segments.md).
 3. Each recipient sends the join code to the sandbox number via WhatsApp
    once (a one-time sandbox requirement per phone number).
 4. `venv/Scripts/python scripts/set_vault_secret.py agency.whatsapp.auth_token`
-   (the Auth Token, next to Account SID on the console dashboard).
-5. Add each client's recipient numbers to their
-   `config/clients/<id>.yaml` under `notifications.whatsapp_recipients`.
+   (the Auth Token, next to Account SID on the console dashboard) — run
+   this yourself in your own terminal, never paste the token into a chat
+   with Claude; the hidden `getpass` prompt is designed exactly to avoid
+   that.
+5. Add each client's recipient numbers from the admin **Clients** page in
+   the web UI (not a YAML file — see "Alert thresholds and WhatsApp
+   recipients now live in the database" in docs/secrets.md).
 
-## Not yet verified live
+## Status: live-tested, paused pending a real number
 
-Built and wired into the orchestrator, but not yet exercised against a
-real Twilio sandbox send — needs the user to complete the Twilio console
-setup above (account creation, sandbox join) before a live send can be
-confirmed. Until then, this is the same "verified only against documented
-API behavior" state the GA4 connector started in (see docs/connectors.md)
-before a real testable account existed for it.
+Account SID / Auth Token / config loading all verified working live --
+`load_whatsapp_config()` correctly resolves a real Vault secret and
+connects. The actual **send** is blocked, not by configuration, but by
+the ContentSid requirement above (`send_whatsapp_alert()` needs a real
+code change first). Per the user's decision, further testing is paused
+until a real verified WhatsApp sender (not the Sandbox) is available --
+at that point, both the code fix and a real approved Content Template
+need to happen together, not the Sandbox's 3 fixed demo templates.

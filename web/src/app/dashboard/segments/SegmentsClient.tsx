@@ -13,7 +13,8 @@ import {
   toConvertWayCsv,
   RecipeResult,
 } from "@/lib/segmentRecipes";
-import ConditionBuilder, { type Condition, type FieldDef } from "./ConditionBuilder";
+import ConditionBuilder, { type Condition } from "./ConditionBuilder";
+import { CUSTOMER_FRIENDLY_FIELDS, ORDER_FRIENDLY_FIELDS } from "@/lib/segmentFriendlyFields";
 
 type RecipeKey = "repeat" | "high_aov" | "winback" | "custom";
 
@@ -36,18 +37,12 @@ const RECIPES: Record<RecipeKey, { label: string; fileType: "customers" | "order
   custom: {
     label: "Custom",
     fileType: "any",
-    description: "Define your own conditions on any column in the file -- including product-related ones (e.g. \"Lineitem name contains ...\") without a separate picker step.",
+    description: "Build your own segment from plain-language conditions (order total, order date, product, payment/fulfillment status) instead of fixed presets.",
   },
 };
 
 const inputClass =
   "w-full rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:border-zinc-600 focus:outline-none";
-
-function guessFieldType(header: string): FieldDef["type"] {
-  if (/date|created|at$/i.test(header)) return "date";
-  if (/price|spent|total|orders|quantity|value|count/i.test(header)) return "number";
-  return "text";
-}
 
 export default function SegmentsClient() {
   const [recipe, setRecipe] = useState<RecipeKey>("repeat");
@@ -64,12 +59,19 @@ export default function SegmentsClient() {
 
   const activeRecipe = RECIPES[recipe];
 
-  const headers = useMemo(() => {
-    if (!csvText) return [];
-    return csvText.split("\n")[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-  }, [csvText]);
+  const customFields = customShape === "orders" ? ORDER_FRIENDLY_FIELDS : CUSTOMER_FRIENDLY_FIELDS;
 
-  const customFields: FieldDef[] = useMemo(() => headers.map((h) => ({ key: h, label: h, type: guessFieldType(h) })), [headers]);
+  // Live, not gated behind "Process" -- recomputes on every condition edit
+  // so there's immediate feedback on whether a filter is even reasonable
+  // before committing to an export, same idea as Kwik Engage's "Show
+  // Estimated Count".
+  const customPreviewCount = useMemo(() => {
+    if (recipe !== "custom" || !csvText || customConditions.length === 0) return null;
+    const rows = customShape === "orders" ? parseOrdersExport(csvText) : parseCustomersExport(csvText);
+    const conditions = customConditions.map((c) => ({ column: c.field, operator: c.operator, value: c.value }));
+    const r = customRecipe(rows, conditions, customShape);
+    return r.customers.length + r.skipped.length;
+  }, [recipe, csvText, customShape, customConditions]);
 
   function handleFile(file: File) {
     setResult(null);
@@ -193,8 +195,13 @@ export default function SegmentsClient() {
               </select>
             </div>
           )}
-          {!csvText && <p className="text-xs text-zinc-500">Upload a file below to build conditions on its columns.</p>}
+          {!csvText && <p className="text-xs text-zinc-500">Upload a file below, then build your conditions.</p>}
           {csvText && <ConditionBuilder fields={customFields} conditions={customConditions} onChange={setCustomConditions} />}
+          {customPreviewCount !== null && (
+            <p className="mt-2 text-xs text-zinc-400">
+              <span className="font-semibold text-zinc-200">~{customPreviewCount}</span> customers match so far
+            </p>
+          )}
         </div>
       )}
 

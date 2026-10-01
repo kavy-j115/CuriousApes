@@ -30,7 +30,7 @@ export default async function AdminPermissionsPage() {
         Read-only overview of who has access to what. To change something, use Users.
       </p>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-900">
+      <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">

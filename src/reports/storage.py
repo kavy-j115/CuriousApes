@@ -40,13 +40,13 @@ def ensure_bucket_exists(project_url: str, service_role_key: str) -> None:
         response.raise_for_status()
 
 
-def upload_report(local_path: str, client_id: str, project_url: str, service_role_key: str) -> str:
-    """Uploads local_path to reports/<client_id>/<filename>, overwriting any
-    existing file at that path (each pipeline run replaces the previous
-    report rather than accumulating versions). Returns the storage path."""
-    filename = os.path.basename(local_path)
-    storage_path = f"{client_id}/{filename}"
-
+def upload_file(local_path: str, storage_path: str, project_url: str, service_role_key: str) -> str:
+    """Uploads local_path to the given storage_path, overwriting any
+    existing file there. The generic primitive behind upload_report() and
+    the DHR sender (src/reports/dhr.py) -- kept separate from
+    upload_report() so DHR files can live under their own
+    <client_id>/dhr/ prefix without upload_report()'s client_id parameter
+    meaning two different things in two different callers."""
     with open(local_path, "rb") as f:
         response = requests.put(
             _storage_url(project_url, storage_path),
@@ -61,3 +61,38 @@ def upload_report(local_path: str, client_id: str, project_url: str, service_rol
         )
     response.raise_for_status()
     return storage_path
+
+
+def upload_report(local_path: str, client_id: str, project_url: str, service_role_key: str) -> str:
+    """Uploads local_path to reports/<client_id>/<filename>, overwriting any
+    existing file at that path (each pipeline run replaces the previous
+    report rather than accumulating versions). Returns the storage path."""
+    filename = os.path.basename(local_path)
+    return upload_file(local_path, f"{client_id}/{filename}", project_url, service_role_key)
+
+
+def create_signed_url(project_url: str, service_role_key: str, storage_path: str, expires_in: int = 3600) -> str:
+    """Returns a time-limited URL for a file in the private 'reports'
+    bucket. Needed because Twilio has to fetch the file itself over plain
+    HTTP to attach it to a WhatsApp message (src/reports/dhr.py) -- the
+    bucket stays private for every other access path, so this is the one
+    deliberate, short-lived exception rather than making the whole bucket
+    public."""
+    response = requests.post(
+        f"{project_url}/storage/v1/object/sign/{STORAGE_BUCKET}/{storage_path}",
+        headers={
+            "Authorization": f"Bearer {service_role_key}",
+            "apikey": service_role_key,
+        },
+        json={"expiresIn": expires_in},
+        timeout=15,
+    )
+    response.raise_for_status()
+    # Supabase returns a relative path here (documented as something like
+    # "/object/sign/reports/...?token=..."), so it needs the storage API's
+    # base prepended to be a real fetchable URL. NOT YET VERIFIED against
+    # a live bucket (same "untested" state the rest of this file already
+    # admits to) -- if this is wrong, the exact prefix is the first thing
+    # to check against a real response.
+    signed_path = response.json()["signedURL"]
+    return signed_path if signed_path.startswith("http") else f"{project_url}/storage/v1{signed_path}"

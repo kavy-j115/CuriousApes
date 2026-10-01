@@ -66,7 +66,7 @@ export default function DashboardShell({
             <Menu size={20} />
           </button>
         </TopBar>
-        <main className="flex-1 overflow-x-auto bg-zinc-950 p-4 sm:p-6">{children}</main>
+        <main className="flex-1 overflow-x-auto scrollbar-thin bg-zinc-950 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

@@ -36,3 +36,28 @@ def send_whatsapp_alert(account_sid: str, auth_token: str, from_number: str, to_
     )
     if not response.ok:
         raise requests.HTTPError(f"WhatsApp send failed ({response.status_code}): {response.text}")
+
+
+def send_whatsapp_media(
+    account_sid: str, auth_token: str, from_number: str, to_phone: str, media_url: str, caption: str
+) -> None:
+    """Sends a file (the DHR .xlsx -- see src/reports/dhr.py) as a WhatsApp
+    attachment, not an inline message -- a multi-column daily report table
+    is unreadable as chat text, this is the only sane way to deliver it.
+    media_url must be fetchable by Twilio's servers over plain HTTP; a
+    signed Supabase Storage URL (storage.create_signed_url) handles that
+    without making the whole reports bucket public."""
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+    response = requests.post(
+        url,
+        auth=HTTPBasicAuth(account_sid, auth_token),
+        data={
+            "From": _as_whatsapp_address(from_number),
+            "To": _as_whatsapp_address(to_phone),
+            "Body": caption,
+            "MediaUrl": media_url,
+        },
+        timeout=15,
+    )
+    if not response.ok:
+        raise requests.HTTPError(f"WhatsApp media send failed ({response.status_code}): {response.text}")

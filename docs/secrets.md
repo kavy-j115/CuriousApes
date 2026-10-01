@@ -108,6 +108,23 @@ needs a real token generated per client until a proper OAuth app exists
 (see docs/architecture.md's future-work notes) — Shopify's per-store
 token scoping means there's no equivalent shortcut available today.
 
+## Alert thresholds and WhatsApp recipients now live in the database
+
+An exception to "identifiers/config live in git-tracked YAML" above:
+`alert_thresholds` and `whatsapp_recipients` moved from
+`config/clients/<id>.yaml` into the `clients` table itself
+(`sql/018_client_notifications.sql`) instead. Neither is a credential or
+a system identifier (an ad account ID, a store domain) — they're
+operational settings an admin should be able to change from the web UI
+when onboarding a client, without a git commit. `src/config/clients.py`'s
+`load_all(conn)` still returns them under the exact same
+`thresholds`/`notifications.whatsapp_recipients` keys every existing
+caller (`src/scheduler/run_pipeline.py`, `src/analytics/alerts.py`,
+`src/reports/dhr.py`) already expected — only where the values come from
+changed, not their shape. Edited from the admin **Clients** page
+(`web/src/app/dashboard/admin/clients/ClientRow.tsx`'s "alerts/WhatsApp"
+section), which writes straight to those two columns.
+
 ## Migration notes
 
 `dev_test`'s credentials were migrated from `.env` via

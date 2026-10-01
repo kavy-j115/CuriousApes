@@ -26,7 +26,47 @@ export async function createClientRecord(formData: FormData) {
   const display_name = (formData.get("display_name") as string)?.trim();
   if (!client_id || !display_name) throw new Error("client_id and display_name are required.");
 
-  const { error } = await supabase.from("clients").insert({ client_id, display_name });
+  // Alert thresholds + WhatsApp recipients can be set right away at
+  // creation, or left blank and filled in later from the same row's
+  // "notifications" editor -- see updateClientNotifications() below. Both
+  // write to the same two columns (sql/018_client_notifications.sql).
+  const revenue = formData.get("revenue_change_pct");
+  const cac = formData.get("cac_change_pct");
+  const roas = formData.get("roas_change_pct");
+  const thresholds: Record<string, number> = {};
+  if (revenue) thresholds.revenue_change_pct = Number(revenue);
+  if (cac) thresholds.cac_change_pct = Number(cac);
+  if (roas) thresholds.roas_change_pct = Number(roas);
+
+  const recipients = (formData.get("whatsapp_recipients") as string)
+    ?.split(",")
+    .map((p) => p.trim())
+    .filter(Boolean) ?? [];
+
+  const { error } = await supabase.from("clients").insert({
+    client_id,
+    display_name,
+    alert_thresholds: Object.keys(thresholds).length > 0 ? thresholds : null,
+    whatsapp_recipients: recipients,
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/admin/clients");
+}
+
+// Edits an existing client's thresholds/recipients -- the same two
+// sql/018_client_notifications.sql columns createClientRecord() can set
+// at creation time, just editable afterward too.
+export async function updateClientNotifications(
+  clientId: string,
+  thresholds: { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null,
+  whatsappRecipients: string[]
+) {
+  const { supabase } = await requireAdmin();
+  const { error } = await supabase
+    .from("clients")
+    .update({ alert_thresholds: thresholds, whatsapp_recipients: whatsappRecipients })
+    .eq("client_id", clientId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard/admin/clients");

@@ -26,6 +26,8 @@ import psycopg2.extras
 
 from src.config.clients import load_all, get_value, resolve_secret
 from src.config.whatsapp_config import load_whatsapp_config
+from src.config.report_config import load_report_config
+from src.reports.report_columns import resolve_columns, resolve_roas_thresholds
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
 from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
@@ -34,6 +36,7 @@ from src.reports.business_health_report import generate_report
 from src.reports.storage import ensure_bucket_exists, upload_report
 from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_failure_alert
 from src.notifications.dispatch import send_pending_alerts
+from src.reports.dhr import generate_and_send_dhr
 
 load_dotenv()
 
@@ -93,6 +96,20 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     else:
         results.append(StepResult("GA4 sync", "skipped", "not configured for this client"))
 
+    # Read unconditionally, before any try block that could fail early --
+    # the DHR step further down needs these regardless of whether the
+    # on-demand Report step above it succeeds, so they can't live inside
+    # that block's scope-by-accident (a NameError there would crash this
+    # client's whole run instead of just recording a skip/error).
+    supabase_url = os.environ.get("SUPABASE_URL")
+    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    # Same report_config a client's web Reports page reads (sql/015_report_config.sql)
+    # -- resolved once here and reused for both the on-demand Excel report
+    # below and the DHR WhatsApp send further down, so both match the web.
+    report_config = load_report_config(conn, client_id)
+    report_columns = resolve_columns(report_config)
+    roas_thresholds = resolve_roas_thresholds(report_config)
+
     rows: list[dict] = []
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -103,11 +120,9 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
         rows = cur.fetchall()
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = OUTPUT_DIR / f"{client_id}_business_health_report.xlsx"
-        generate_report(rows, config.get("display_name", client_id), str(output_path))
+        generate_report(rows, config.get("display_name", client_id), str(output_path), report_columns, roas_thresholds)
         results.append(StepResult("Report", "ok", f"{len(rows)} rows -> {output_path.name}"))
 
-        supabase_url = os.environ.get("SUPABASE_URL")
-        service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         if supabase_url and service_role_key:
             try:
                 ensure_bucket_exists(supabase_url, service_role_key)
@@ -152,6 +167,28 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
         if sent_count or not send_errors:
             results.append(StepResult("WhatsApp notify", "ok", f"{sent_count} alert(s) sent to {len(recipients)} recipient(s)"))
 
+    # DHR: always attempts "daily"; "weekly" additionally fires on Mondays,
+    # "monthly" additionally fires on the 1st -- one daily cron trigger
+    # covers all three cadences instead of needing separate schedules.
+    if whatsapp_config:
+        dhr_periods = ["daily"]
+        if date.today().weekday() == 0:
+            dhr_periods.append("weekly")
+        if date.today().day == 1:
+            dhr_periods.append("monthly")
+        for period in dhr_periods:
+            try:
+                status = generate_and_send_dhr(
+                    conn, client_id, config.get("display_name", client_id), period,
+                    recipients, whatsapp_config, supabase_url, service_role_key,
+                    report_columns, roas_thresholds,
+                )
+                results.append(StepResult(f"DHR ({period})", "ok" if status.startswith("sent") else "skipped", status))
+            except Exception as e:
+                results.append(StepResult(f"DHR ({period})", "error", str(e)))
+    else:
+        results.append(StepResult("DHR", "skipped", "config/whatsapp.yaml not set up"))
+
     return results
 
 
@@ -174,7 +211,7 @@ def main():
     print(f"D2C ANALYTICS PIPELINE\n{'-' * 22}\nStarted: {started_at} (syncing since {since})")
 
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    clients = load_all()
+    clients = load_all(conn)
 
     if not clients:
         print("No clients found in config/clients/*.yaml -- nothing to do.")

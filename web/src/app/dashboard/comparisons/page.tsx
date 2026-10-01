@@ -9,7 +9,7 @@ function ReportMiniTable({ rows, reportConfig }: { rows: ReportRow[]; reportConf
   const columns = resolveReportColumns(reportConfig);
   return (
     <div>
-      <div className="overflow-x-auto rounded-lg border border-zinc-900">
+      <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">

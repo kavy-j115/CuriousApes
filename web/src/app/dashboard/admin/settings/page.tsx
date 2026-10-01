@@ -9,37 +9,12 @@ import type { ReportConfig } from "@/lib/reportColumns";
 
 const CONFIG_DIR = path.join(process.cwd(), "..", "config");
 
-type ClientThresholds = {
-  client_id: string;
-  display_name: string;
-  revenue_change_pct?: number;
-  cac_change_pct?: number;
-  roas_change_pct?: number;
-  whatsapp_recipients?: string[];
-};
-
-function readClientThresholds(): ClientThresholds[] {
-  const clientsDir = path.join(CONFIG_DIR, "clients");
-  if (!fs.existsSync(clientsDir)) return [];
-  return fs
-    .readdirSync(clientsDir)
-    .filter((f) => f.endsWith(".yaml"))
-    .map((f) => {
-      const raw = loadYaml(fs.readFileSync(path.join(clientsDir, f), "utf8")) as Record<string, unknown>;
-      const thresholds = (raw.thresholds ?? {}) as Record<string, number>;
-      const notifications = (raw.notifications ?? {}) as Record<string, string[]>;
-      return {
-        client_id: raw.client_id as string,
-        display_name: raw.display_name as string,
-        revenue_change_pct: thresholds.revenue_change_pct,
-        cac_change_pct: thresholds.cac_change_pct,
-        roas_change_pct: thresholds.roas_change_pct,
-        whatsapp_recipients: notifications.whatsapp_recipients ?? [],
-      };
-    });
-}
-
-function readWhatsappConfig(): { phone_number_id?: string; template_name?: string; template_language?: string } | null {
+// Only the agency-level Twilio sender config is still YAML-based -- there's
+// exactly one of it, same shared-credential reasoning as agency.meta_ads
+// (docs/secrets.md). Per-client thresholds/WhatsApp recipients moved to
+// the database (sql/018_client_notifications.sql) and are edited directly
+// on each client's row below now, not read-only here.
+function readWhatsappConfig(): { account_sid?: string; from_number?: string } | null {
   const filePath = path.join(CONFIG_DIR, "whatsapp.yaml");
   if (!fs.existsSync(filePath)) return null;
   return loadYaml(fs.readFileSync(filePath, "utf8")) as Record<string, string>;
@@ -51,18 +26,19 @@ export default async function AdminSettingsPage() {
   if (!profile) return null;
   assertRole(profile, ["admin"]);
 
-  let clients: ClientThresholds[] = [];
   let whatsapp: ReturnType<typeof readWhatsappConfig> = null;
   let readError: string | null = null;
   try {
-    clients = readClientThresholds();
     whatsapp = readWhatsappConfig();
   } catch (e) {
-    readError = e instanceof Error ? e.message : "Failed to read config files.";
+    readError = e instanceof Error ? e.message : "Failed to read config/whatsapp.yaml.";
   }
 
   const [{ data: allClients }, { data: profiles }, { data: access }, { data: clientUsers }] = await Promise.all([
-    supabase.from("clients").select("client_id, display_name, created_at, report_config").order("display_name"),
+    supabase
+      .from("clients")
+      .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients")
+      .order("display_name"),
     supabase.from("user_profiles").select("id, email, display_name, role").order("created_at"),
     supabase.from("client_access").select("user_id, client_id, expires_at"),
     supabase.from("user_profiles").select("id, email, display_name").eq("role", "client"),
@@ -101,7 +77,7 @@ export default async function AdminSettingsPage() {
             />
           ))}
         </div>
-        <div className="overflow-x-auto rounded-lg border border-zinc-900">
+        <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
@@ -109,6 +85,7 @@ export default async function AdminSettingsPage() {
                 <th className="px-3 py-2">Display name</th>
                 <th className="px-3 py-2">Assigned to</th>
                 <th className="px-3 py-2">Report</th>
+                <th className="px-3 py-2">Notifications</th>
                 <th></th>
               </tr>
             </thead>
@@ -116,7 +93,12 @@ export default async function AdminSettingsPage() {
               {(allClients ?? []).map((c) => (
                 <ClientRow
                   key={c.client_id}
-                  client={{ ...c, report_config: c.report_config as ReportConfig }}
+                  client={{
+                    ...c,
+                    report_config: c.report_config as ReportConfig,
+                    alert_thresholds: c.alert_thresholds as { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null,
+                    whatsapp_recipients: (c.whatsapp_recipients as string[] | null) ?? [],
+                  }}
                   assignedUserId={assignedUserByClient.get(c.client_id) ?? null}
                   assignableUsers={clientUsers ?? []}
                 />
@@ -126,65 +108,29 @@ export default async function AdminSettingsPage() {
         </div>
       </div>
 
-      <p className="mb-4 text-sm font-semibold text-zinc-200">Alert thresholds &amp; WhatsApp</p>
-      <p className="mb-6 text-xs text-zinc-500">
-        Read-only -- lives in `config/*.yaml` with the Python pipeline, not the database (see
-        docs/secrets.md). Edit those files directly to change them.
+      <p className="mb-2 text-sm font-semibold text-zinc-200">WhatsApp sender (Twilio)</p>
+      <p className="mb-4 text-xs text-zinc-500">
+        Agency-wide, read-only here -- lives in config/whatsapp.yaml with the Python pipeline
+        (see docs/notifications.md). Per-client thresholds and recipients are set above, per client.
       </p>
 
       {readError && (
-        <p className="mb-6 rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
-          Couldn&apos;t read config files: {readError}
+        <p className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
+          Couldn&apos;t read config/whatsapp.yaml: {readError}
         </p>
       )}
 
       {!readError && (
-        <>
-          <div className="mb-6 rounded-lg border border-zinc-800 p-4">
-            <p className="mb-2 text-sm font-semibold text-zinc-200">WhatsApp sender</p>
-            {whatsapp?.phone_number_id ? (
-              <ul className="space-y-1 text-sm text-zinc-400">
-                <li>phone_number_id: <span className="font-mono text-zinc-300">{whatsapp.phone_number_id}</span></li>
-                <li>template_name: <span className="font-mono text-zinc-300">{whatsapp.template_name}</span></li>
-                <li>template_language: <span className="font-mono text-zinc-300">{whatsapp.template_language}</span></li>
-              </ul>
-            ) : (
-              <p className="text-sm text-zinc-500">Not configured yet -- see docs/notifications.md.</p>
-            )}
-          </div>
-
-          <div className="overflow-x-auto rounded-lg border border-zinc-900">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
-                  <th className="px-3 py-2">Client</th>
-                  <th className="px-3 py-2">Revenue drop %</th>
-                  <th className="px-3 py-2">CAC increase %</th>
-                  <th className="px-3 py-2">ROAS drop %</th>
-                  <th className="px-3 py-2">WhatsApp recipients</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map((c) => (
-                  <tr key={c.client_id} className="border-b border-zinc-900 text-zinc-300">
-                    <td className="px-3 py-1.5 text-zinc-100">{c.display_name}</td>
-                    <td className="px-3 py-1.5">{c.revenue_change_pct ?? "—"}</td>
-                    <td className="px-3 py-1.5">{c.cac_change_pct ?? "—"}</td>
-                    <td className="px-3 py-1.5">{c.roas_change_pct ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-xs">
-                      {c.whatsapp_recipients && c.whatsapp_recipients.length > 0 ? c.whatsapp_recipients.join(", ") : "—"}
-                    </td>
-                  </tr>
-                ))}
-                {clients.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-4 text-center text-zinc-500">No client config files found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <div className="rounded-lg border border-zinc-800 p-4">
+          {whatsapp?.account_sid ? (
+            <ul className="space-y-1 text-sm text-zinc-400">
+              <li>account_sid: <span className="font-mono text-zinc-300">{whatsapp.account_sid}</span></li>
+              <li>from_number: <span className="font-mono text-zinc-300">{whatsapp.from_number}</span></li>
+            </ul>
+          ) : (
+            <p className="text-sm text-zinc-500">Not configured yet -- see docs/notifications.md.</p>
+          )}
+        </div>
       )}
     </div>
   );

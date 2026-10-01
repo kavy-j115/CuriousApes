@@ -5,7 +5,6 @@ import {
   FileBarChart,
   GitCompare,
   Users2,
-  Sparkles,
   Building2,
   UserCog,
   ShieldCheck,
@@ -25,22 +24,24 @@ export type NavItem = {
 // Retention deliberately links OUT to the existing retention dashboard
 // rather than getting its own page here -- see docs/architecture.md
 // ("dashboard-agnostic... we will not modify the retention dashboard
-// unless explicitly asked"). Segments and Cleaning & Download are
-// admin/user only: a client shouldn't be exporting their own customer PII
-// or triggering a data-cleaning action themselves.
+// unless explicitly asked"). Admin/user only, same reasoning as Segments:
+// an agency-internal tool, not something a client account should see.
+//
+// Cleaning is deliberately NOT listed here -- the feature turned out more
+// complicated than it was worth for now, so it's hidden from the nav
+// while the code stays in place (src/app/dashboard/cleaning/) for later.
 export const MAIN_NAV: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "user", "client"] },
   {
     label: "Retention",
     href: process.env.NEXT_PUBLIC_RETENTION_DASHBOARD_URL || "#",
     icon: TrendingUp,
-    roles: ["admin", "user", "client"],
+    roles: ["admin", "user"],
     external: true,
   },
   { label: "Reports", href: "/dashboard/reports", icon: FileBarChart, roles: ["admin", "user", "client"] },
   { label: "Comparisons", href: "/dashboard/comparisons", icon: GitCompare, roles: ["admin", "user", "client"] },
   { label: "Segments", href: "/dashboard/segments", icon: Users2, roles: ["admin", "user"] },
-  { label: "Cleaning", href: "/dashboard/cleaning", icon: Sparkles, roles: ["admin", "user"] },
 ];
 
 export const ADMIN_NAV: NavItem[] = [

@@ -16,7 +16,7 @@ export default function SamplePreview() {
         differs.
       </p>
 
-      <div className="overflow-x-auto rounded-md border border-zinc-900">
+      <div className="overflow-x-auto scrollbar-thin rounded-md border border-zinc-900">
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400">

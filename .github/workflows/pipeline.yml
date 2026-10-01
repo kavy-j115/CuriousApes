@@ -24,25 +24,31 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libreoffice-calc
 
       - name: Run pipeline
-        # DATABASE_URL is the only secret this workflow needs -- every
-        # per-client credential lives in Supabase Vault instead, reached
-        # through this same connection. See docs/secrets.md.
+        # DATABASE_URL is the only secret every per-client credential needs
+        # (they live in Supabase Vault instead, reached through this same
+        # connection -- see docs/secrets.md). SUPABASE_URL/SERVICE_ROLE_KEY
+        # are only needed for Storage upload and DHR WhatsApp sending
+        # (docs/notifications.md) -- without them those two steps just log
+        # "skipped", same as locally.
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python -m src.scheduler.run_pipeline
 
       - name: Recalculate Excel formulas
         # openpyxl writes formulas with no cached value -- LibreOffice
         # recalculates on load, and --convert-to (even to the same format)
-        # forces a full open/recalc/save round-trip.
+        # forces a full open/recalc/save round-trip. Recurses into
+        # reports/output/dhr/ too, not just the top-level on-demand report.
         run: |
-          for f in reports/output/*.xlsx; do
-            soffice --headless --convert-to xlsx --outdir reports/output "$f"
+          find reports/output -name "*.xlsx" | while read -r f; do
+            soffice --headless --convert-to xlsx --outdir "$(dirname "$f")" "$f"
           done
 
       - name: Upload generated reports
         uses: actions/upload-artifact@v4
         with:
           name: business-health-reports
-          path: reports/output/*.xlsx
+          path: reports/output/**/*.xlsx
           retention-days: 30
