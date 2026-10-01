@@ -1,25 +1,25 @@
-# The agency's one shared WhatsApp Business Cloud API sender -- used for
-# every client's alerts, same reasoning as agency.meta_ads.access_token in
-# docs/secrets.md. This file is committed (phone_number_id isn't secret --
-# useless without the access token below); the token itself lives in
-# Supabase Vault, set with:
-#   venv/Scripts/python scripts/set_vault_secret.py agency.whatsapp.access_token
+# The agency's one shared WhatsApp sender, via Twilio -- used for every
+# client's alerts, same reasoning as agency.meta_ads.access_token in
+# docs/secrets.md. This file is committed (account_sid/from_number aren't
+# secret -- useless without the auth token below); the token itself lives
+# in Supabase Vault, set with:
+#   venv/Scripts/python scripts/set_vault_secret.py agency.whatsapp.auth_token
 #
-# Setup (Meta Business Suite -> WhatsApp Manager):
-# 1. Add/verify a WhatsApp Business phone number under the same Business
-#    Manager already used for Meta Ads.
-# 2. Copy its Phone Number ID into phone_number_id below.
-# 3. Create and get approved a message template named exactly
-#    `template_name` below, category "Utility", with a single body
-#    placeholder, e.g.: "Cogent Alert: {{1}}"
-# 4. Generate a permanent access token for this WhatsApp Business Account
-#    (System User, same style as the Meta Ads token) and store it in Vault
-#    under access_token_secret.
+# Setup (twilio.com console):
+# 1. Sign up / log in, copy the Account SID from the console dashboard
+#    into account_sid below.
+# 2. Messaging -> Try it out -> Send a WhatsApp message gives a Sandbox
+#    number (usually +14155238886) and a join code. Put the sandbox number
+#    in from_number below. Each recipient must WhatsApp that join code to
+#    the sandbox number once before they can receive messages from it --
+#    a sandbox-only requirement, not needed once a real approved WhatsApp
+#    sender replaces the sandbox.
+# 3. Copy the Auth Token (console dashboard, next to Account SID) into
+#    Vault via the command above.
 #
-# Leave phone_number_id blank to leave WhatsApp alerts disabled -- the
+# Leave account_sid blank to leave WhatsApp alerts disabled -- the
 # pipeline skips sending (not an error) until this is filled in.
 
-phone_number_id: ""
-access_token_secret: agency.whatsapp.access_token
-template_name: alert_notification
-template_language: en_US
+account_sid: ""
+auth_token_secret: agency.whatsapp.auth_token
+from_number: "+14155238886"

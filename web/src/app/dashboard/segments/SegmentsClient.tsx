@@ -9,14 +9,13 @@ import {
   repeatCustomersRecipe,
   highAovRecipe,
   winbackRecipe,
-  productRecipe,
   customRecipe,
   toConvertWayCsv,
   RecipeResult,
 } from "@/lib/segmentRecipes";
 import ConditionBuilder, { type Condition, type FieldDef } from "./ConditionBuilder";
 
-type RecipeKey = "repeat" | "high_aov" | "winback" | "product" | "custom";
+type RecipeKey = "repeat" | "high_aov" | "winback" | "custom";
 
 const RECIPES: Record<RecipeKey, { label: string; fileType: "customers" | "orders" | "any"; description: string }> = {
   repeat: {
@@ -34,15 +33,10 @@ const RECIPES: Record<RecipeKey, { label: string; fileType: "customers" | "order
     fileType: "orders",
     description: "Customers whose most recent order was X-Y days ago. Upload an Orders export (has the dates Customers export lacks).",
   },
-  product: {
-    label: "Bought Product(s)",
-    fileType: "orders",
-    description: "Customers who bought one or more specific products. Upload an Orders export.",
-  },
   custom: {
     label: "Custom",
     fileType: "any",
-    description: "Build your own conditions on any column in the file.",
+    description: "Define your own conditions on any column in the file -- including product-related ones (e.g. \"Lineitem name contains ...\") without a separate picker step.",
   },
 };
 
@@ -61,7 +55,6 @@ export default function SegmentsClient() {
   const [minAov, setMinAov] = useState(5000);
   const [minDays, setMinDays] = useState(60);
   const [maxDays, setMaxDays] = useState(90);
-  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [customConditions, setCustomConditions] = useState<Condition[]>([]);
   const [customShape, setCustomShape] = useState<"customers" | "orders">("orders");
   const [fileWarning, setFileWarning] = useState<string | null>(null);
@@ -77,12 +70,6 @@ export default function SegmentsClient() {
   }, [csvText]);
 
   const customFields: FieldDef[] = useMemo(() => headers.map((h) => ({ key: h, label: h, type: guessFieldType(h) })), [headers]);
-
-  const availableProducts = useMemo(() => {
-    if (recipe !== "product" || !csvText) return [];
-    const rows = parseOrdersExport(csvText);
-    return Array.from(new Set(rows.map((r) => r["Lineitem name"]).filter(Boolean))).sort();
-  }, [recipe, csvText]);
 
   function handleFile(file: File) {
     setResult(null);
@@ -120,8 +107,6 @@ export default function SegmentsClient() {
       setResult(recipe === "repeat" ? repeatCustomersRecipe(rows, minOrders) : highAovRecipe(rows, minAov));
     } else if (recipe === "winback") {
       setResult(winbackRecipe(parseOrdersExport(csvText), minDays, maxDays));
-    } else if (recipe === "product") {
-      setResult(productRecipe(parseOrdersExport(csvText), Array.from(selectedProducts)));
     } else {
       const rows = customShape === "orders" ? parseOrdersExport(csvText) : parseCustomersExport(csvText);
       const conditions = customConditions.map((c) => ({ column: c.field, operator: c.operator, value: c.value }));
@@ -139,15 +124,6 @@ export default function SegmentsClient() {
     a.download = `${recipe}_convertway_export.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  function toggleProduct(title: string) {
-    setSelectedProducts((prev) => {
-      const next = new Set(prev);
-      if (next.has(title)) next.delete(title);
-      else next.add(title);
-      return next;
-    });
   }
 
   const skipCounts = result
@@ -203,24 +179,6 @@ export default function SegmentsClient() {
             <label className="mb-1 block text-sm font-medium text-zinc-300">Days ago (max)</label>
             <input type="number" min={0} value={maxDays} onChange={(e) => setMaxDays(Number(e.target.value))} className={`w-24 ${inputClass}`} />
           </div>
-        </div>
-      )}
-
-      {recipe === "product" && (
-        <div className="mb-4">
-          <label className="mb-1 block text-sm font-medium text-zinc-300">Products</label>
-          {!csvText && <p className="text-xs text-zinc-500">Upload a file below to see available products.</p>}
-          {csvText && availableProducts.length === 0 && <p className="text-xs text-zinc-500">No products found in this file.</p>}
-          {availableProducts.length > 0 && (
-            <div className="max-h-48 overflow-y-auto rounded-md border border-zinc-800">
-              {availableProducts.map((p) => (
-                <label key={p} className="flex items-center gap-2 border-b border-zinc-900 px-3 py-1.5 text-xs text-zinc-300 last:border-0">
-                  <input type="checkbox" checked={selectedProducts.has(p)} onChange={() => toggleProduct(p)} />
-                  {p}
-                </label>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

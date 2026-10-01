@@ -192,11 +192,10 @@ export function winbackRecipe(rows: OrderExportRow[], minDaysAgo: number, maxDay
   return { customers, skipped };
 }
 
-// Shared by productRecipe and customRecipe below: given already-collapsed
-// one-row-per-order rows, pick the single most recent order per customer
-// (email) and turn it into a CleanedCustomer -- same contact-extraction
-// logic winbackRecipe uses above, factored out so both recipes stay
-// consistent with it rather than drifting.
+// Shared by customRecipe below: given already-collapsed one-row-per-order
+// rows, pick the single most recent order per customer (email) and turn it
+// into a CleanedCustomer -- same contact-extraction logic winbackRecipe
+// uses above, factored out so both stay consistent rather than drifting.
 function latestOrderPerCustomer(orders: OrderExportRow[]): RecipeResult {
   const byEmail = new Map<string, OrderExportRow[]>();
   for (const order of orders) {
@@ -243,15 +242,6 @@ function latestOrderPerCustomer(orders: OrderExportRow[]): RecipeResult {
   }
 
   return { customers, skipped };
-}
-
-// "Bought Product(s)" -- the product-based counterpart to Repeat Customers/
-// High AOV/Win-back. Needs an Orders export specifically: a Customers
-// export has no per-order product info at all.
-export function productRecipe(rows: OrderExportRow[], products: string[]): RecipeResult {
-  const matchingLineItems = rows.filter((r) => products.includes(r["Lineitem name"]));
-  const orders = collapseToOrders(matchingLineItems);
-  return latestOrderPerCustomer(orders);
 }
 
 export type ConditionOperator = "gte" | "lte" | "eq" | "contains";

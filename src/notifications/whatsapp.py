@@ -1,48 +1,37 @@
-"""Sends WhatsApp messages via Meta's WhatsApp Business Cloud API -- the
-same Business Manager the Meta Ads connector already authenticates
-against, not a separate third-party provider (see docs/notifications.md).
+"""Sends WhatsApp messages via Twilio's WhatsApp API.
 
-WhatsApp only allows a free-form message within a 24-hour window after the
-recipient last messaged the business number. Nobody is going to message a
-bot every morning just so an unattended alert job is allowed to text them
-back, so this always sends a pre-approved message TEMPLATE, never free
-text -- templates are the one message type WhatsApp allows outside that
-window.
+Switched from Meta's WhatsApp Business Cloud API: that needed a verified
+WhatsApp Business phone number added to the agency's Meta Business
+Manager, which wasn't available for testing yet. Twilio provides a free
+Sandbox number (joinable instantly via a code, no business verification
+needed) that works immediately for development -- the same `send_whatsapp_alert`
+call just needs different credentials once a real Twilio WhatsApp sender
+replaces the sandbox later.
+
+Unlike Meta, Twilio's sandbox allows plain free-form text (no pre-approved
+message template required) -- that restriction only applies to Twilio's
+production WhatsApp Business API outside the sandbox, not here.
 """
 
 import requests
+from requests.auth import HTTPBasicAuth
 
-GRAPH_API_VERSION = "v21.0"
+
+def _as_whatsapp_address(raw: str) -> str:
+    return raw if raw.startswith("whatsapp:") else f"whatsapp:{raw}"
 
 
-def send_whatsapp_alert(
-    phone_number_id: str,
-    access_token: str,
-    to_phone: str,
-    template_name: str,
-    template_language: str,
-    body_text: str,
-) -> None:
-    """to_phone: E.164 format (e.g. '+919876543210'). body_text fills the
-    template's single {{1}} body placeholder -- see docs/notifications.md
-    for the exact template text this expects to have been approved as."""
-    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_phone.lstrip("+"),
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": template_language},
-            "components": [
-                {"type": "body", "parameters": [{"type": "text", "text": body_text}]}
-            ],
-        },
-    }
+def send_whatsapp_alert(account_sid: str, auth_token: str, from_number: str, to_phone: str, body_text: str) -> None:
+    """to_phone: E.164 format (e.g. '+919876543210')."""
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
     response = requests.post(
         url,
-        headers={"Authorization": f"Bearer {access_token}"},
-        json=payload,
+        auth=HTTPBasicAuth(account_sid, auth_token),
+        data={
+            "From": _as_whatsapp_address(from_number),
+            "To": _as_whatsapp_address(to_phone),
+            "Body": body_text,
+        },
         timeout=15,
     )
     if not response.ok:
