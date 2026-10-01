@@ -48,7 +48,7 @@ export default function CompareView({
     <div className="overflow-x-auto">
       <table className="w-full max-w-3xl border-collapse text-sm">
         <thead>
-          <tr className="border-b border-zinc-300 bg-[#4472C4] text-left text-white dark:border-zinc-700">
+          <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
             <th className="px-3 py-2">Metric</th>
             <th className="px-3 py-2">{labelA}</th>
             <th className="px-3 py-2">{labelB}</th>
@@ -63,11 +63,11 @@ export default function CompareView({
             const delta = a !== null && b !== null ? b - a : null;
             const fmt = m.isPct ? fmtPct : fmtNum;
             return (
-              <tr key={m.key} className="border-b border-zinc-200 dark:border-zinc-800">
-                <td className="px-3 py-1.5 font-medium">{m.label}</td>
+              <tr key={m.key} className="border-b border-zinc-900 text-zinc-300">
+                <td className="px-3 py-1.5 font-medium text-zinc-100">{m.label}</td>
                 <td className="px-3 py-1.5">{fmt(a)}</td>
                 <td className="px-3 py-1.5">{fmt(b)}</td>
-                <td className={`px-3 py-1.5 ${delta !== null && delta > 0 ? "text-green-600" : delta !== null && delta < 0 ? "text-red-600" : ""}`}>
+                <td className={`px-3 py-1.5 ${delta !== null && delta > 0 ? "text-lime-400" : delta !== null && delta < 0 ? "text-red-400" : ""}`}>
                   {delta === null ? "—" : m.isPct ? fmtPct(delta) : fmtNum(delta)}
                 </td>
                 <td className="px-3 py-1.5">{deltaPct(a, b)}</td>
@@ -76,7 +76,7 @@ export default function CompareView({
           })}
         </tbody>
       </table>
-      <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-500">
+      <p className="mt-4 text-xs text-zinc-500">
         {labelA}: {rowsA.length} day{rowsA.length === 1 ? "" : "s"} · {labelB}: {rowsB.length} day{rowsB.length === 1 ? "" : "s"}
       </p>
     </div>

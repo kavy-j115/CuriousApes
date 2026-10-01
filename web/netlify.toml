@@ -1,0 +1,10 @@
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = ".next"
+
+# Netlify auto-detects Next.js and applies @netlify/plugin-nextjs, but
+# listing it explicitly avoids depending on that auto-detection silently
+# changing behavior later.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

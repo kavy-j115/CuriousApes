@@ -24,7 +24,7 @@ function stripLeadingQuote(v: string | undefined): string {
   return v.startsWith("'") ? v.slice(1) : v;
 }
 
-function splitPhone(rawPhone: string, regionHint?: string): { national: string; countryCode: string } | null {
+export function splitPhone(rawPhone: string, regionHint?: string): { national: string; countryCode: string } | null {
   if (!rawPhone) return null;
   try {
     const parsed = parsePhoneNumberFromString(rawPhone, regionHint as CountryCode | undefined);
@@ -189,5 +189,131 @@ export function winbackRecipe(rows: OrderExportRow[], minDaysAgo: number, maxDay
     });
   }
 
+  return { customers, skipped };
+}
+
+// Shared by productRecipe and customRecipe below: given already-collapsed
+// one-row-per-order rows, pick the single most recent order per customer
+// (email) and turn it into a CleanedCustomer -- same contact-extraction
+// logic winbackRecipe uses above, factored out so both recipes stay
+// consistent with it rather than drifting.
+function latestOrderPerCustomer(orders: OrderExportRow[]): RecipeResult {
+  const byEmail = new Map<string, OrderExportRow[]>();
+  for (const order of orders) {
+    if (!order["Email"]) continue;
+    const list = byEmail.get(order["Email"]) ?? [];
+    list.push(order);
+    byEmail.set(order["Email"], list);
+  }
+
+  const customers: CleanedCustomer[] = [];
+  const skipped: RecipeResult["skipped"] = [];
+
+  for (const [email, customerOrders] of byEmail) {
+    let latestOrder = customerOrders[0];
+    let latestTime = new Date(latestOrder["Created at"]).getTime();
+    for (const o of customerOrders) {
+      const t = new Date(o["Created at"]).getTime();
+      if (t > latestTime) {
+        latestTime = t;
+        latestOrder = o;
+      }
+    }
+
+    const rawPhone = latestOrder["Phone"] || latestOrder["Billing Phone"] || "";
+    const region = latestOrder["Billing Country"] || undefined;
+    if (!rawPhone) {
+      skipped.push({ reason: "no_phone", email });
+      continue;
+    }
+    const split = splitPhone(rawPhone, region);
+    if (!split) {
+      skipped.push({ reason: "invalid_phone", email });
+      continue;
+    }
+
+    const [firstName, ...rest] = (latestOrder["Billing Name"] || "").split(" ");
+    customers.push({
+      phone: split.national,
+      email,
+      firstName: firstName || "",
+      lastName: rest.join(" "),
+      countryCode: split.countryCode,
+    });
+  }
+
+  return { customers, skipped };
+}
+
+// "Bought Product(s)" -- the product-based counterpart to Repeat Customers/
+// High AOV/Win-back. Needs an Orders export specifically: a Customers
+// export has no per-order product info at all.
+export function productRecipe(rows: OrderExportRow[], products: string[]): RecipeResult {
+  const matchingLineItems = rows.filter((r) => products.includes(r["Lineitem name"]));
+  const orders = collapseToOrders(matchingLineItems);
+  return latestOrderPerCustomer(orders);
+}
+
+export type ConditionOperator = "gte" | "lte" | "eq" | "contains";
+
+export type FilterCondition = {
+  column: string;
+  operator: ConditionOperator;
+  value: string;
+};
+
+export const OPERATOR_LABELS: Record<ConditionOperator, string> = {
+  gte: "is at least",
+  lte: "is at most",
+  eq: "is exactly",
+  contains: "contains",
+};
+
+function rowMatchesConditions(row: Record<string, string>, conditions: FilterCondition[]): boolean {
+  return conditions.every((c) => {
+    const raw = row[c.column] ?? "";
+    if (c.operator === "contains") return raw.toLowerCase().includes(c.value.toLowerCase());
+
+    const num = Number(raw);
+    const target = Number(c.value);
+    if (!Number.isNaN(num) && !Number.isNaN(target)) {
+      if (c.operator === "eq") return num === target;
+      if (c.operator === "gte") return num >= target;
+      if (c.operator === "lte") return num <= target;
+    }
+    // Falls back to plain string comparison -- works correctly for ISO
+    // dates (e.g. "2026-09-01" >= "2026-08-01" compares right as strings)
+    // and is at least a sane fallback for anything else non-numeric.
+    if (c.operator === "eq") return raw === c.value;
+    if (c.operator === "gte") return raw >= c.value;
+    if (c.operator === "lte") return raw <= c.value;
+    return false;
+  });
+}
+
+// The fully custom path: the user picks their own column/operator/value
+// conditions instead of one of the built-in recipes above. Works against
+// either export shape -- Orders rows are collapsed to one-per-order first
+// (same reasoning as every other Orders-export recipe), Customers rows are
+// used as-is since they're already one row per customer.
+export function customRecipe(
+  rows: Record<string, string>[],
+  conditions: FilterCondition[],
+  shape: "customers" | "orders"
+): RecipeResult {
+  const candidateRows = shape === "orders" ? collapseToOrders(rows as OrderExportRow[]) : rows;
+  const matched = candidateRows.filter((r) => rowMatchesConditions(r, conditions));
+
+  if (shape === "orders") {
+    return latestOrderPerCustomer(matched as OrderExportRow[]);
+  }
+
+  const customers: CleanedCustomer[] = [];
+  const skipped: RecipeResult["skipped"] = [];
+  for (const row of matched as CustomerExportRow[]) {
+    const { cleaned, skip } = customerRowToCleaned(row);
+    if (cleaned) customers.push(cleaned);
+    else if (skip) skipped.push({ reason: skip, email: row["Email"] || "" });
+  }
   return { customers, skipped };
 }

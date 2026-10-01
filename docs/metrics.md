@@ -39,7 +39,7 @@ by (client, date). Built for the "Business Health Report" format.
 |---|---|---|
 | `amount_spent` | sum of Meta `spend` | |
 | `purchase_value` | sum of Meta's `purchase`-type `action_values` | see docs/connectors.md for the action_type ambiguity caveat |
-| `proas` (Purchase ROAS) | `purchase_value / amount_spent` | |
+| `proas` (Purchase ROAS) | `purchase_value / amount_spent` | color-coded in the UI (green/orange/red) per client-configurable thresholds -- see "PROAS color-coding" below |
 | `atc_pct` | `add_to_carts / sessions` | GA4 event count, not deduplicated sessions — see docs/connectors.md |
 | `conversion_pct` | **Shopify** `order_count / sessions` | **Assumption, stated explicitly rather than guessed silently:** interpreted from the target report format as orders over site sessions. Crosses two data sources — correct this if it doesn't match your intended definition |
 | `checkout_pct` | `checkouts / sessions` | GA4 event count, same caveat as `atc_pct` |
@@ -49,6 +49,19 @@ by (client, date). Built for the "Business Health Report" format.
 Verified against hand-calculated synthetic data spanning two months
 (`scripts/sanity_check_report_metrics.py`) — not yet against real multi-month
 client data, since we don't have any yet.
+
+## PROAS color-coding
+
+Every report table (Dashboard, Reports, Comparisons) colors the PROAS cell
+green/orange/red so a bad day is visible without reading every number --
+same "don't make someone read every row" idea as alert thresholds
+(docs/alerts.md), as a color instead of a notification. Thresholds are
+per-client (`clients.report_config.roasThresholds`, see
+sql/015_report_config.sql) -- green at/above `good`, red below `danger`,
+orange in between. Defaults to `{good: 3, danger: 1.5}` for any client
+that hasn't set their own, in `web/src/lib/reportColumns.ts`. Configured
+on the admin Clients page, independent of whether that client uses the
+default column set or custom ones.
 
 ## Cohort retention & LTV (`sql/012_cohort_retention.sql`)
 

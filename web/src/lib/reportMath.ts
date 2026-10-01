@@ -6,6 +6,7 @@ export type ReportRow = {
   checkouts: number | null;
   order_count: number;
   gross_revenue: string;
+  net_revenue: string;
   aov: string;
   amount_spent: string | null;
   purchase_value: string | null;
@@ -27,23 +28,6 @@ export function fmtPct(v: number | string | null): string {
   return `${(Number(v) * 100).toFixed(1)}%`;
 }
 
-export const REPORT_COLUMNS: { label: string; key: keyof ReportRow; fmt: (r: ReportRow) => string }[] = [
-  { label: "Day", key: "report_date", fmt: (r) => r.report_date },
-  { label: "Sessions", key: "sessions", fmt: (r) => fmtNum(r.sessions) },
-  { label: "Cart Adds", key: "add_to_carts", fmt: (r) => fmtNum(r.add_to_carts) },
-  { label: "Orders", key: "order_count", fmt: (r) => fmtNum(r.order_count) },
-  { label: "Gross Sales", key: "gross_revenue", fmt: (r) => fmtNum(r.gross_revenue) },
-  { label: "AOV", key: "aov", fmt: (r) => fmtNum(r.aov) },
-  { label: "Ad Spend", key: "amount_spent", fmt: (r) => fmtNum(r.amount_spent) },
-  { label: "Purchase Value", key: "purchase_value", fmt: (r) => fmtNum(r.purchase_value) },
-  { label: "PROAS", key: "proas", fmt: (r) => fmtNum(r.proas) },
-  { label: "ATC %", key: "atc_pct", fmt: (r) => fmtPct(r.atc_pct) },
-  { label: "Conv %", key: "conversion_pct", fmt: (r) => fmtPct(r.conversion_pct) },
-  { label: "Checkout %", key: "checkout_pct", fmt: (r) => fmtPct(r.checkout_pct) },
-  { label: "MTD Sale", key: "mtd_sale", fmt: (r) => fmtNum(r.mtd_sale) },
-  { label: "LMTD", key: "lmtd_sale", fmt: (r) => fmtNum(r.lmtd_sale) },
-];
-
 // Mirrors the Excel report's Total row: SUM for absolute counts/amounts,
 // a true weighted ratio (not an average-of-daily-ratios) for AOV/PROAS/%s.
 export function computeTotal(rows: ReportRow[]): ReportRow {
@@ -61,6 +45,7 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
   const checkouts = sum((r) => r.checkouts);
   const orderCount = sum((r) => r.order_count) ?? 0;
   const grossRevenue = sum((r) => r.gross_revenue) ?? 0;
+  const netRevenue = sum((r) => r.net_revenue);
   const amountSpent = sum((r) => r.amount_spent);
   const purchaseValue = sum((r) => r.purchase_value);
 
@@ -75,6 +60,7 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
     checkouts,
     order_count: orderCount,
     gross_revenue: String(grossRevenue),
+    net_revenue: netRevenue === null ? "0" : String(netRevenue),
     aov: String(ratio(grossRevenue, orderCount) ?? 0),
     amount_spent: amountSpent === null ? null : String(amountSpent),
     purchase_value: purchaseValue === null ? null : String(purchaseValue),

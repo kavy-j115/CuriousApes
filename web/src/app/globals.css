@@ -19,6 +19,13 @@
   }
 }
 
+html {
+  /* Bumps every Tailwind rem-based text/spacing utility up proportionally
+     (text-sm, text-xs, etc. are all rem-based) -- one lever for "the whole
+     UI reads too small" instead of hunting down every text-* class. */
+  font-size: 18px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
