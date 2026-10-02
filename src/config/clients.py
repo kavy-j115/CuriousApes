@@ -29,40 +29,66 @@ CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "clients
 
 
 def load_all(conn=None) -> list[dict]:
-    """Returns one dict per client config file, each with a resolved
-    'client_id' at minimum. Skips a file if its client_id is missing.
+    """Returns one dict per client, each with a resolved 'client_id' at
+    minimum.
 
-    thresholds/notifications.whatsapp_recipients are overlaid from the
-    `clients` table (sql/018_client_notifications.sql) when `conn` is
-    given, OVERWRITING whatever a YAML file might still have under those
-    same keys -- these moved to being admin-UI-managed (an operational
-    setting, not a credential or identifier) rather than git-tracked
-    config, so the database is now the source of truth for them. Every
-    existing caller of get_value(config, "thresholds") / get_value(config,
-    "notifications", "whatsapp_recipients") keeps working unchanged, since
-    this merges into the exact same dict shape they already expect."""
-    clients = []
+    Sources, in order: config/clients/*.yaml (legacy/bootstrap, e.g.
+    dev_test), then the `clients` table when `conn` is given. The database
+    is the source of truth for everything it holds, OVERLAID on top of any
+    YAML for the same client_id:
+    - thresholds / notifications.whatsapp_recipients (sql/018)
+    - data-source connection identifiers: shopify.store_domain,
+      meta_ads.ad_account_id, ga4.property_id (sql/020) -- credentials are
+      never stored here; the *_secret fields name Vault secrets, with the
+      same per-client / shared-agency naming the YAML template documents
+    - sync_enabled: a client switched off in the admin UI stays in the list
+      (callers decide what to do) but is marked config["sync_enabled"] =
+      False. A client that exists only as YAML, with no database row, is
+      treated as enabled -- unchanged legacy behavior.
+    A client that exists only in the database (onboarded entirely through
+    the admin UI, no YAML at all) is included too.
+
+    Every existing caller of get_value(config, "thresholds") /
+    get_value(config, "notifications", "whatsapp_recipients") keeps working
+    unchanged, since this merges into the same dict shape they expect."""
+    by_id: dict[str, dict] = {}
     for path in sorted(CONFIG_DIR.glob("*.yaml")):
         with open(path) as f:
             config = yaml.safe_load(f)
         if config and config.get("client_id"):
-            clients.append(config)
+            by_id[config["client_id"]] = config
 
     if conn is not None:
         cur = conn.cursor()
-        for config in clients:
-            cur.execute(
-                "SELECT alert_thresholds, whatsapp_recipients FROM clients WHERE client_id = %s;",
-                (config["client_id"],),
-            )
-            row = cur.fetchone()
-            if row:
-                alert_thresholds, whatsapp_recipients = row
-                config["thresholds"] = alert_thresholds or {}
-                config["notifications"] = {"whatsapp_recipients": list(whatsapp_recipients or [])}
+        cur.execute(
+            """
+            SELECT client_id, display_name, alert_thresholds, whatsapp_recipients,
+                   shopify_store_domain, meta_ad_account_id, ga4_property_id, sync_enabled
+            FROM clients ORDER BY client_id;
+            """
+        )
+        for (client_id, display_name, alert_thresholds, whatsapp_recipients,
+             store_domain, ad_account_id, ga4_property_id, sync_enabled) in cur.fetchall():
+            config = by_id.setdefault(client_id, {"client_id": client_id, "display_name": display_name})
+            config["thresholds"] = alert_thresholds or {}
+            config["notifications"] = {"whatsapp_recipients": list(whatsapp_recipients or [])}
+            config["sync_enabled"] = bool(sync_enabled)
+
+            if store_domain:
+                shopify = config.setdefault("shopify", {})
+                shopify["store_domain"] = store_domain
+                shopify.setdefault("access_token_secret", f"{client_id}.shopify.access_token")
+            if ad_account_id:
+                meta = config.setdefault("meta_ads", {})
+                meta["ad_account_id"] = ad_account_id
+                meta.setdefault("access_token_secret", "agency.meta_ads.access_token")
+            if ga4_property_id:
+                ga4 = config.setdefault("ga4", {})
+                ga4["property_id"] = ga4_property_id
+                ga4.setdefault("service_account_secret", "agency.ga4.service_account_json")
         cur.close()
 
-    return clients
+    return list(by_id.values())
 
 
 def get_value(config: dict, *keys: str):

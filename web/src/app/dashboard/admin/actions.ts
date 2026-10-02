@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/auth/profile";
 import type { ReportConfig } from "@/lib/reportColumns";
+import { buildInstallUrl, signState } from "@/lib/shopifyOAuth";
+import { normalizeConnections } from "@/lib/clientConnections";
+import { getShopifyClientSecret, redirectUri, shopifyEnv } from "@/lib/shopifyConfig";
 
 // Defense in depth, not the real gate: every admin page already calls
 // assertRole(profile, ["admin"]) before rendering, so a non-admin can't
@@ -43,15 +46,85 @@ export async function createClientRecord(formData: FormData) {
     .map((p) => p.trim())
     .filter(Boolean) ?? [];
 
+  const connections = normalizeConnections({
+    shopifyStoreDomain: formData.get("shopify_store_domain") as string | null,
+    metaAdAccountId: formData.get("meta_ad_account_id") as string | null,
+    ga4PropertyId: formData.get("ga4_property_id") as string | null,
+  });
+
+  // sync_enabled is left at its database default (false): a new client is
+  // never fetched until it's switched on deliberately.
   const { error } = await supabase.from("clients").insert({
     client_id,
     display_name,
     alert_thresholds: Object.keys(thresholds).length > 0 ? thresholds : null,
     whatsapp_recipients: recipients,
+    ...connections,
   });
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard/admin/clients");
+}
+
+// Changing the store domain invalidates an earlier connection (the stored
+// token belongs to the old store), so connected-at is cleared when it changes.
+export async function updateClientConnections(
+  clientId: string,
+  input: { shopifyStoreDomain: string; metaAdAccountId: string; ga4PropertyId: string }
+) {
+  const { supabase } = await requireAdmin();
+  const next = normalizeConnections(input);
+  const { data: current } = await supabase
+    .from("clients")
+    .select("shopify_store_domain")
+    .eq("client_id", clientId)
+    .maybeSingle();
+  const domainChanged = (current?.shopify_store_domain ?? null) !== next.shopify_store_domain;
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ ...next, ...(domainChanged ? { shopify_connected_at: null } : {}) })
+    .eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/admin/clients");
+}
+
+export async function setClientSyncEnabled(clientId: string, enabled: boolean) {
+  const { supabase } = await requireAdmin();
+  const { error } = await supabase.from("clients").update({ sync_enabled: enabled }).eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/admin/clients");
+}
+
+// Returns a link to send to the client's store owner. Generating it makes no
+// call to Shopify -- it only signs a URL; nothing is fetched until the owner
+// opens it and approves.
+export async function createShopifyInstallLink(clientId: string): Promise<{ url: string } | { error: string }> {
+  const { supabase } = await requireAdmin();
+  const { data: client } = await supabase
+    .from("clients")
+    .select("shopify_store_domain")
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (!client?.shopify_store_domain) return { error: "Save the store domain first." };
+
+  try {
+    const { clientId: appClientId, scopes } = shopifyEnv();
+    const secret = await getShopifyClientSecret();
+    return {
+      url: buildInstallUrl({
+        shop: client.shopify_store_domain,
+        clientId: appClientId,
+        scopes,
+        redirectUri: redirectUri(),
+        state: signState(clientId, secret),
+      }),
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Couldn't create the install link." };
+  }
 }
 
 // Edits an existing client's thresholds/recipients -- the same two

@@ -16,7 +16,7 @@ export default async function AdminClientsPage() {
   const [{ data: clients }, { data: clientUsers }, { data: access }] = await Promise.all([
     supabase
       .from("clients")
-      .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients")
+      .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients, shopify_store_domain, meta_ad_account_id, ga4_property_id, shopify_connected_at, sync_enabled")
       .order("created_at", { ascending: false }),
     supabase.from("user_profiles").select("id, email, display_name").eq("role", "client"),
     supabase.from("client_access").select("user_id, client_id").is("expires_at", null),
@@ -62,6 +62,20 @@ export default async function AdminClientsPage() {
             <input name="whatsapp_recipients" placeholder="+919876543210, +919876543211" className={inputClass} />
           </div>
         </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">Shopify store domain</label>
+            <input name="shopify_store_domain" placeholder="brand.myshopify.com" className={inputClass} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">Meta ad account ID</label>
+            <input name="meta_ad_account_id" placeholder="1234567890" className={`w-44 ${inputClass}`} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">GA4 property ID</label>
+            <input name="ga4_property_id" placeholder="123456789" className={`w-40 ${inputClass}`} />
+          </div>
+        </div>
         <button type="submit" className="self-start rounded-md bg-accent px-4 py-2 text-sm font-medium text-white">
           Add client
         </button>
@@ -76,6 +90,8 @@ export default async function AdminClientsPage() {
               <th className="px-3 py-2">Assigned to</th>
               <th className="px-3 py-2">Report</th>
               <th className="px-3 py-2">Notifications</th>
+              <th className="px-3 py-2">Connections</th>
+              <th className="px-3 py-2">Sync</th>
               <th></th>
             </tr>
           </thead>
@@ -95,7 +111,7 @@ export default async function AdminClientsPage() {
             ))}
             {(clients ?? []).length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-zinc-500">No clients yet.</td>
+                <td colSpan={8} className="px-3 py-4 text-center text-zinc-500">No clients yet.</td>
               </tr>
             )}
           </tbody>

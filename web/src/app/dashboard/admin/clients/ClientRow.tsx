@@ -3,8 +3,16 @@
 import Select from "../../_components/Select";
 import Checkbox from "../../_components/Checkbox";
 import { useState, useTransition } from "react";
-import { Trash2, ChevronDown, ChevronRight } from "lucide-react";
-import { deleteClientRecord, updateClientReportConfig, updateClientNotifications, reassignClient } from "../actions";
+import { Trash2, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import {
+  deleteClientRecord,
+  updateClientReportConfig,
+  updateClientNotifications,
+  reassignClient,
+  updateClientConnections,
+  setClientSyncEnabled,
+  createShopifyInstallLink,
+} from "../actions";
 import { AVAILABLE_METRICS, ALL_METRIC_KEYS, defaultLabel, DEFAULT_ROAS_THRESHOLDS, type MetricKey, type ReportConfig, type DerivedColumn } from "@/lib/reportColumns";
 import { validateFormula } from "@/lib/formulaEval";
 
@@ -17,6 +25,11 @@ type ClientRowData = {
   report_config: ReportConfig;
   alert_thresholds: AlertThresholds;
   whatsapp_recipients: string[];
+  shopify_store_domain: string | null;
+  meta_ad_account_id: string | null;
+  ga4_property_id: string | null;
+  shopify_connected_at: string | null;
+  sync_enabled: boolean;
 };
 type AssignableUser = { id: string; email: string | null; display_name: string | null };
 
@@ -49,6 +62,13 @@ export default function ClientRow({
   const [cacPct, setCacPct] = useState(String(client.alert_thresholds?.cac_change_pct ?? ""));
   const [roasPct, setRoasPct] = useState(String(client.alert_thresholds?.roas_change_pct ?? ""));
   const [recipients, setRecipients] = useState((client.whatsapp_recipients ?? []).join(", "));
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [storeDomain, setStoreDomain] = useState(client.shopify_store_domain ?? "");
+  const [metaAccount, setMetaAccount] = useState(client.meta_ad_account_id ?? "");
+  const [ga4Property, setGa4Property] = useState(client.ga4_property_id ?? "");
+  const [installLink, setInstallLink] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
   const [deleted, setDeleted] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -124,6 +144,44 @@ export default function ClientRow({
     });
   }
 
+  function saveConnections() {
+    setConnectionError(null);
+    setInstallLink(null);
+    startTransition(async () => {
+      try {
+        await updateClientConnections(client.client_id, {
+          shopifyStoreDomain: storeDomain,
+          metaAdAccountId: metaAccount,
+          ga4PropertyId: ga4Property,
+        });
+      } catch (e) {
+        setConnectionError(e instanceof Error ? e.message : "Couldn't save.");
+      }
+    });
+  }
+
+  function generateInstallLink() {
+    setConnectionError(null);
+    startTransition(async () => {
+      const result = await createShopifyInstallLink(client.client_id);
+      if ("error" in result) setConnectionError(result.error);
+      else setInstallLink(result.url);
+    });
+  }
+
+  async function copyInstallLink() {
+    if (!installLink) return;
+    await navigator.clipboard.writeText(installLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  function handleSyncToggle(next: boolean) {
+    startTransition(async () => {
+      await setClientSyncEnabled(client.client_id, next);
+    });
+  }
+
   function handleReassign(newUserId: string) {
     startTransition(async () => {
       await reassignClient(client.client_id, newUserId || null);
@@ -172,6 +230,16 @@ export default function ClientRow({
             {notificationsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} alerts/WhatsApp
           </button>
         </td>
+        <td className="px-3 py-1.5">
+          <button onClick={() => setConnectionsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
+            {connectionsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} connections
+          </button>
+        </td>
+        <td className="px-3 py-1.5">
+          <span className={pending ? "pointer-events-none opacity-50" : ""}>
+            <Checkbox checked={client.sync_enabled} onChange={handleSyncToggle} label={client.sync_enabled ? "On" : "Off"} />
+          </span>
+        </td>
         <td className="px-3 py-1.5 text-right">
           <button onClick={handleDelete} disabled={pending} aria-label="Delete client" className="rounded p-1.5 text-zinc-500 hover:bg-status-bad/10 hover:text-status-bad">
             <Trash2 size={14} />
@@ -180,7 +248,7 @@ export default function ClientRow({
       </tr>
       {columnsOpen && (
         <tr className="border-b border-zinc-900">
-          <td colSpan={6} className="bg-black px-3 py-3">
+          <td colSpan={8} className="bg-black px-3 py-3">
             {deleteError && <p className="mb-2 text-xs text-status-bad">{deleteError}</p>}
             <Checkbox className="mb-3" checked={useDefault} onChange={setUseDefault} label="Use default report configuration" />
 
@@ -263,9 +331,72 @@ export default function ClientRow({
           </td>
         </tr>
       )}
+      {connectionsOpen && (
+        <tr className="border-b border-zinc-900">
+          <td colSpan={8} className="bg-black px-3 py-3">
+            <div className="mb-3 flex flex-wrap items-end gap-3">
+              <label className="text-xs text-zinc-400">
+                Shopify store domain
+                <input
+                  value={storeDomain}
+                  onChange={(e) => setStoreDomain(e.target.value)}
+                  placeholder="brand.myshopify.com"
+                  className="mt-1 block w-60 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100"
+                />
+              </label>
+              <label className="text-xs text-zinc-400">
+                Meta ad account ID
+                <input
+                  value={metaAccount}
+                  onChange={(e) => setMetaAccount(e.target.value)}
+                  placeholder="1234567890"
+                  className="mt-1 block w-44 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100"
+                />
+              </label>
+              <label className="text-xs text-zinc-400">
+                GA4 property ID
+                <input
+                  value={ga4Property}
+                  onChange={(e) => setGa4Property(e.target.value)}
+                  placeholder="123456789"
+                  className="mt-1 block w-40 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100"
+                />
+              </label>
+              <button onClick={saveConnections} disabled={pending} className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+                {pending ? "Saving…" : "Save"}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span className={client.shopify_connected_at ? "text-status-good" : "text-zinc-500"}>
+                {client.shopify_connected_at
+                  ? `Shopify connected ${new Date(client.shopify_connected_at).toLocaleDateString()}`
+                  : "Shopify not connected"}
+              </span>
+              <button
+                onClick={generateInstallLink}
+                disabled={pending || !client.shopify_store_domain}
+                className="rounded border border-zinc-800 px-2.5 py-1 text-zinc-200 hover:border-accent hover:text-accent disabled:opacity-40"
+              >
+                {client.shopify_connected_at ? "Reconnect Shopify" : "Connect Shopify"}
+              </button>
+            </div>
+
+            {installLink && (
+              <div className="mt-3 flex max-w-2xl items-center gap-2">
+                <input readOnly value={installLink} onFocus={(e) => e.currentTarget.select()} className="min-w-0 flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300" />
+                <button onClick={copyInstallLink} aria-label="Copy install link" className="rounded border border-zinc-800 p-1.5 text-zinc-300 hover:border-accent hover:text-accent">
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+            )}
+            {connectionError && <p className="mt-2 text-xs text-status-bad">{connectionError}</p>}
+          </td>
+        </tr>
+      )}
       {notificationsOpen && (
         <tr className="border-b border-zinc-900">
-          <td colSpan={6} className="bg-black px-3 py-3">
+          <td colSpan={8} className="bg-black px-3 py-3">
             <p className="mb-2 text-xs font-medium text-zinc-300">Alert thresholds</p>
             <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-zinc-300">
               <label className="flex items-center gap-1.5">

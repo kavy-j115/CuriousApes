@@ -264,6 +264,12 @@ def main():
 
     any_errors = False
     for config in clients:
+        if config.get("sync_enabled") is False:
+            print(f"
+{config['client_id']}
+{'-' * len(config['client_id'])}
+  [--] Skipped: sync is switched off for this client")
+            continue
         results = run_for_client(conn, config, since, whatsapp_config)
         print_summary(config["client_id"], results)
         if any(r.status == "error" for r in results):

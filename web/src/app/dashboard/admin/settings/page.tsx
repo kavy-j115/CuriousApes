@@ -4,8 +4,7 @@ import { load as loadYaml } from "js-yaml";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile, assertRole, type Role } from "@/lib/auth/profile";
 import UserRow from "../users/UserRow";
-import ClientRow from "../clients/ClientRow";
-import type { ReportConfig } from "@/lib/reportColumns";
+import Link from "next/link";
 
 const CONFIG_DIR = path.join(process.cwd(), "..", "config");
 
@@ -77,35 +76,9 @@ export default async function AdminSettingsPage() {
             />
           ))}
         </div>
-        <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
-                <th className="px-3 py-2">client_id</th>
-                <th className="px-3 py-2">Display name</th>
-                <th className="px-3 py-2">Assigned to</th>
-                <th className="px-3 py-2">Report</th>
-                <th className="px-3 py-2">Notifications</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(allClients ?? []).map((c) => (
-                <ClientRow
-                  key={c.client_id}
-                  client={{
-                    ...c,
-                    report_config: c.report_config as ReportConfig,
-                    alert_thresholds: c.alert_thresholds as { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null,
-                    whatsapp_recipients: (c.whatsapp_recipients as string[] | null) ?? [],
-                  }}
-                  assignedUserId={assignedUserByClient.get(c.client_id) ?? null}
-                  assignableUsers={clientUsers ?? []}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Link href="/dashboard/admin/clients" className="text-sm text-accent hover:underline">
+          Manage clients
+        </Link>
       </div>
 
       <p className="mb-3 text-sm font-semibold text-zinc-200">WhatsApp sender</p>

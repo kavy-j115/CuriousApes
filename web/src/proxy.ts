@@ -40,8 +40,12 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  // Shopify's install redirect lands here from a client's store owner, who
+  // has no account in this app. The route verifies Shopify's HMAC and our
+  // signed state itself instead of relying on a session.
+  const isShopifyCallback = request.nextUrl.pathname === "/api/shopify/callback";
 
-  if (!data?.claims && !isLoginPage) {
+  if (!data?.claims && !isLoginPage && !isShopifyCallback) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
