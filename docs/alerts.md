@@ -21,6 +21,42 @@ drop").
 precise spend ÷ *new* customers acquired. We don't track new-vs-returning
 customers yet — revisit once that exists.
 
+## Data quality checks (unconditional, no per-client config)
+
+Separate from the threshold-based rules above -- these catch broken
+ingestion/transform logic, not business swings, so every client gets them
+regardless of whether `thresholds:` is configured. Implemented in
+`src/analytics/data_quality.py`:
+
+| Alert | Fires when |
+|---|---|
+| `data_quality_line_items` | An order's `subtotal_price` doesn't match the sum of its own line items (quantity × unit_price), beyond a $1 tolerance for rounding |
+| `data_quality_currency` | A client's orders span more than one currency -- this pipeline assumes single-currency throughout, so a mix means revenue totals are silently wrong |
+
+Verified live against real `dev_test` data: temporarily corrupting one
+order's `subtotal_price` by $500 correctly produced exactly one
+`data_quality_line_items` alert naming that order; reverting it correctly
+produced zero.
+
+## Anomaly detection (statistical, no per-client config)
+
+Also separate from the threshold rules: a z-score against each metric's own
+trailing history, catching patterns day-over-day % thresholds miss (a slow
+multi-day decline, or a day that's unusual for no single-day reason).
+Implemented in `src/analytics/anomaly.py`. Needs at least 8 days of history
+(7 for the trailing window + today) -- silently produces no alerts before
+that, rather than a noisy false "anomaly" off too little data. A trailing
+window with zero variance (every prior value identical) is also skipped,
+to avoid treating any difference as an "infinite" anomaly.
+
+| Alert | Fires when |
+|---|---|
+| `anomaly_gross_revenue` / `anomaly_order_count` / `anomaly_amount_spent` / `anomaly_proas` | Today's value is more than 2.5 standard deviations from its trailing 7+ day mean |
+
+Verified with synthetic history (natural day-to-day variance, then an
+injected spike and an injected drop): both correctly fired exactly one
+alert each; a normal day and a too-short history both correctly fired zero.
+
 ## "Never generate unnecessary notifications" (per the brief)
 
 Enforced in `check_metric_alerts()`, verified with synthetic test cases
@@ -76,6 +112,8 @@ Alerts are also sent over WhatsApp — see docs/notifications.md for the
 full design (why WhatsApp, why templates are required, the agency-level
 sender vs. per-client recipients split, and delivery semantics).
 
-## Not built yet
+## UI
 
-UI display of the `alerts` table (see the pending role-based UI work).
+Alerts are shown in the dashboard's Alerts page (`web/src/app/dashboard/alerts/page.tsx`),
+styled by alert_type prefix (red for threshold breaches, amber for sync
+failures/data quality, purple for statistical anomalies).

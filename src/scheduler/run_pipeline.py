@@ -35,6 +35,8 @@ from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
 from src.reports.storage import ensure_bucket_exists, upload_report
 from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_failure_alert
+from src.analytics.data_quality import run_data_quality_checks
+from src.analytics.anomaly import check_anomalies
 from src.notifications.dispatch import send_pending_alerts
 from src.reports.dhr import generate_and_send_dhr
 
@@ -134,6 +136,32 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
             results.append(StepResult("Report upload", "skipped", "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set"))
     except Exception as e:
         results.append(StepResult("Report", "error", str(e)))
+
+    # Data quality checks: structural sanity on the clean layer, unconditional
+    # (no per-client config) -- these catch broken ingestion, not business
+    # swings, so they run every time regardless of whether thresholds exist.
+    try:
+        dq_alerts = run_data_quality_checks(conn, client_id, since)
+        if dq_alerts:
+            save_alerts(conn, client_id, date.today(), dq_alerts)
+            results.append(StepResult("Data quality", "error", "; ".join(a.message for a in dq_alerts)))
+        else:
+            results.append(StepResult("Data quality", "ok", "no issues found"))
+    except Exception as e:
+        results.append(StepResult("Data quality", "error", str(e)))
+
+    # Anomaly detection: z-score based, needs MIN_HISTORY_DAYS+1 rows of
+    # history, so it's silent (not a false "nothing found") until that
+    # history exists for this client.
+    try:
+        anomaly_alerts = check_anomalies(rows)
+        if anomaly_alerts:
+            save_alerts(conn, client_id, date.today(), anomaly_alerts)
+            results.append(StepResult("Anomaly detection", "ok", f"{len(anomaly_alerts)} anomaly(ies) found"))
+        else:
+            results.append(StepResult("Anomaly detection", "ok", "none found / insufficient history"))
+    except Exception as e:
+        results.append(StepResult("Anomaly detection", "error", str(e)))
 
     thresholds = get_value(config, "thresholds") or {}
     if not thresholds:

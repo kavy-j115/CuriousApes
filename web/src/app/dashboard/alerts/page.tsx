@@ -9,11 +9,15 @@ const TYPE_STYLES: Record<string, string> = {
 function styleFor(alertType: string): string {
   if (TYPE_STYLES[alertType]) return TYPE_STYLES[alertType];
   if (alertType.startsWith("sync_failure")) return "bg-amber-500/10 text-amber-400";
+  if (alertType.startsWith("data_quality_")) return "bg-amber-500/10 text-amber-400";
+  if (alertType.startsWith("anomaly_")) return "bg-purple-500/10 text-purple-400";
   return "bg-zinc-800 text-zinc-300";
 }
 
 function labelFor(alertType: string): string {
   if (alertType.startsWith("sync_failure_")) return `Sync failure: ${alertType.replace("sync_failure_", "")}`;
+  if (alertType.startsWith("data_quality_")) return `Data quality: ${alertType.replace("data_quality_", "").replace(/_/g, " ")}`;
+  if (alertType.startsWith("anomaly_")) return `Anomaly: ${alertType.replace("anomaly_", "").replace(/_/g, " ")}`;
   return alertType.replace(/_/g, " ");
 }
 
@@ -41,7 +45,7 @@ export default async function AlertsPage({
   return (
     <div className="max-w-3xl">
       <h1 className="mb-1 text-xl font-semibold text-zinc-50">Alerts</h1>
-      <p className="mb-6 text-xs text-zinc-500">Revenue/CAC/ROAS threshold breaches and sync failures, most recent first.</p>
+      <p className="mb-6 text-xs text-zinc-500">Threshold breaches, sync failures, data quality issues, and statistical anomalies, most recent first.</p>
 
       {(!alerts || alerts.length === 0) && (
         <p className="text-sm text-zinc-500">No alerts for this client yet.</p>
