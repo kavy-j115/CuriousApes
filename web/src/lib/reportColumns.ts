@@ -1,4 +1,5 @@
 import { ReportRow, fmtNum, fmtPct } from "./reportMath";
+import { evaluateFormula } from "./formulaEval";
 
 // The fixed set of metrics a client's report can be built from -- a
 // per-client report_config can only choose which of these to show, in
@@ -69,10 +70,60 @@ export const DEFAULT_METRIC_KEYS: MetricKey[] = [
 export type RoasThresholds = { good: number; danger: number };
 export const DEFAULT_ROAS_THRESHOLDS: RoasThresholds = { good: 3, danger: 1.5 };
 
+// A client-defined extra column, computed from a formula over the metrics
+// above (e.g. "purchase_value / amount_spent" for a blended ROAS that
+// isn't one of our built-in ones) -- the "structural" per-client
+// difference a column picker alone couldn't express. See formulaEval.ts
+// for why this is a hand-written safe evaluator, not eval().
+export type DerivedColumn = {
+  key: string;
+  label: string;
+  formula: string;
+  isPct: boolean;
+};
+
 export type ReportConfig = {
   columns: { key: MetricKey; label: string }[];
   roasThresholds?: RoasThresholds;
+  derivedColumns?: DerivedColumn[];
 } | null;
+
+export const ALL_METRIC_KEYS: MetricKey[] = [
+  "sessions", "add_to_carts", "order_count", "gross_revenue", "net_revenue",
+  "aov", "amount_spent", "purchase_value", "proas", "atc_pct",
+  "conversion_pct", "checkout_pct", "mtd_sale", "lmtd_sale",
+];
+
+// Computes every derivedColumns formula for each row and attaches the
+// result under that column's key, so resolveReportColumns()'s fmt for a
+// derived column can read it the same way it reads a built-in metric.
+// Earlier derived columns are available as variables to later ones
+// (chaining), in the order given. A formula error (bad syntax, unknown
+// field) produces a blank cell for that row, not a crash -- same "a
+// report generates something sane, not nothing" rule as the Python side
+// (src/reports/business_health_report.py).
+export function attachDerivedColumns<T extends ReportRow>(rows: T[], derivedColumns?: DerivedColumn[]): T[] {
+  if (!derivedColumns || derivedColumns.length === 0) return rows;
+  return rows.map((row) => {
+    const vars: Record<string, number | null> = {};
+    for (const key of ALL_METRIC_KEYS) {
+      const v = (row as unknown as Record<string, string | number | null>)[key];
+      vars[key] = v === null || v === undefined ? null : Number(v);
+    }
+    const extended = { ...row } as Record<string, unknown>;
+    for (const dc of derivedColumns) {
+      let value: number | null;
+      try {
+        value = evaluateFormula(dc.formula, vars);
+      } catch {
+        value = null;
+      }
+      extended[dc.key] = value === null ? null : String(value);
+      vars[dc.key] = value;
+    }
+    return extended as T;
+  });
+}
 
 export type ColumnDef = {
   key: string;
@@ -120,5 +171,17 @@ export function resolveReportColumns(config: ReportConfig): ColumnDef[] {
       ? config.columns.map((c) => toColumnDef(c.key, c.label))
       : DEFAULT_METRIC_KEYS.map((key) => toColumnDef(key, defaultLabel(key)));
 
-  return [dayColumn, ...metricColumns];
+  // Derived columns always sit after the chosen metrics -- their values
+  // must already be attached to each row via attachDerivedColumns() before
+  // these fmt functions run (the row type doesn't know about them statically).
+  const derivedCols: ColumnDef[] = (config?.derivedColumns ?? []).map((dc) => ({
+    key: dc.key,
+    label: dc.label,
+    fmt: (r: ReportRow) => {
+      const v = (r as unknown as Record<string, string | null>)[dc.key] ?? null;
+      return dc.isPct ? fmtPct(v) : fmtNum(v);
+    },
+  }));
+
+  return [dayColumn, ...metricColumns, ...derivedCols];
 }

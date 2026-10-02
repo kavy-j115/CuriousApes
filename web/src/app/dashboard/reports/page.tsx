@@ -1,7 +1,7 @@
 import { Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { ReportRow, computeTotal } from "@/lib/reportMath";
-import { resolveReportColumns } from "@/lib/reportColumns";
+import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
 import ReportDateControls from "../_components/ReportDateControls";
 import MetricsCharts from "@/app/MetricsCharts";
 
@@ -19,9 +19,8 @@ export default async function ReportsPage({
   const supabase = await createClient();
   const { data: clients } = await supabase.from("clients").select("client_id, display_name, report_config").order("display_name");
   const selectedClient = client ?? clients?.[0]?.client_id ?? "";
-  const reportColumns = resolveReportColumns(
-    clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null
-  );
+  const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
+  const reportColumns = resolveReportColumns(reportConfig);
 
   const isSingleDay = !!from && (!to || to === from);
   const isRange = !!from && !!to && to !== from;
@@ -37,7 +36,7 @@ export default async function ReportsPage({
   else query = query.limit(28);
 
   const { data, error } = await query;
-  const rows = (data as ReportRow[] | null) ?? [];
+  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
   const showTotal = !isSingleDay && rows.length > 1;
 
   const viewHref = (v: View) => {
@@ -104,13 +103,21 @@ export default async function ReportsPage({
                   ))}
                 </tr>
               ))}
-              {showTotal && (
-                <tr className="border-t-2 border-zinc-700 font-semibold text-zinc-100">
-                  {reportColumns.map((c) => (
-                    <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(computeTotal(rows)) ?? ""}`}>{c.fmt(computeTotal(rows))}</td>
-                  ))}
-                </tr>
-              )}
+              {showTotal && (() => {
+                // Derived columns in the Total row are recomputed from the
+                // already-totaled inputs (correct for ratio-style formulas
+                // like a blended ROAS), not summed per-day -- same
+                // "recompute, don't sum" choice the built-in ratio columns
+                // (AOV, PROAS) already make in computeTotal().
+                const total = attachDerivedColumns([computeTotal(rows)], reportConfig?.derivedColumns)[0];
+                return (
+                  <tr className="border-t-2 border-zinc-700 font-semibold text-zinc-100">
+                    {reportColumns.map((c) => (
+                      <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(total) ?? ""}`}>{c.fmt(total)}</td>
+                    ))}
+                  </tr>
+                );
+              })()}
             </tbody>
           </table>
         </div>

@@ -141,7 +141,22 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     elif len(rows) < 2:
         results.append(StepResult("Alerts", "skipped", "insufficient history (need at least 2 days)"))
     else:
-        today_row, yesterday_row = rows[-1], rows[-2]
+        today_row, yesterday_row = dict(rows[-1]), dict(rows[-2])
+        # Merges in the accurate CAC denominator (new customers that day)
+        # from daily_new_vs_returning (sql/019_new_vs_returning.sql) --
+        # daily_report_metrics itself doesn't have this column, so
+        # check_metric_alerts() would silently fall back to the old
+        # spend/orders approximation without this.
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT order_date, new_customers FROM daily_new_vs_returning WHERE client_id = %s AND order_date IN (%s, %s);",
+            (client_id, today_row["report_date"], yesterday_row["report_date"]),
+        )
+        new_customers_by_date = {r["order_date"]: r["new_customers"] for r in cur.fetchall()}
+        cur.close()
+        today_row["new_customers"] = new_customers_by_date.get(today_row["report_date"])
+        yesterday_row["new_customers"] = new_customers_by_date.get(yesterday_row["report_date"])
+
         alerts = check_metric_alerts(today_row, yesterday_row, thresholds)
         if alerts:
             save_alerts(conn, client_id, today_row["report_date"], alerts)

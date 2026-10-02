@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { ReportRow } from "@/lib/reportMath";
-import { resolveReportColumns, type ReportConfig } from "@/lib/reportColumns";
+import { resolveReportColumns, attachDerivedColumns, type ReportConfig } from "@/lib/reportColumns";
 import CompareDateControls from "../_components/CompareDateControls";
 import CompareView from "@/app/CompareView";
 import MetricsCharts from "@/app/MetricsCharts";
@@ -56,8 +56,8 @@ export default async function ComparisonsPage({
       supabase.from("daily_report_metrics").select("*").eq("client_id", selectedClient).gte("report_date", aFrom).lte("report_date", aTo).order("report_date"),
       supabase.from("daily_report_metrics").select("*").eq("client_id", selectedClient).gte("report_date", bFrom).lte("report_date", bTo).order("report_date"),
     ]);
-    rowsA = (resultA.data as ReportRow[] | null) ?? [];
-    rowsB = (resultB.data as ReportRow[] | null) ?? [];
+    rowsA = attachDerivedColumns((resultA.data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
+    rowsB = attachDerivedColumns((resultB.data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
     compareError = resultA.error?.message ?? resultB.error?.message ?? null;
   }
 

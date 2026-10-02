@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computeTotal, ReportRow, fmtNum } from "@/lib/reportMath";
-import { resolveReportColumns } from "@/lib/reportColumns";
+import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
 import StatTile from "./_components/StatTile";
 import MetricsCharts from "@/app/MetricsCharts";
 
@@ -30,9 +30,8 @@ export default async function DashboardHomePage({
     .order("display_name");
 
   const selectedClient = client ?? clients?.[0]?.client_id ?? "";
-  const reportColumns = resolveReportColumns(
-    clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null
-  );
+  const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
+  const reportColumns = resolveReportColumns(reportConfig);
 
   if (!selectedClient) {
     return <p className="text-sm text-zinc-500">No client assigned to your account yet.</p>;
@@ -46,7 +45,7 @@ export default async function DashboardHomePage({
     .gte("report_date", since60)
     .order("report_date", { ascending: false });
 
-  const rows = (data as ReportRow[] | null) ?? [];
+  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
   const since30 = isoDaysAgo(30);
   const currentRows = rows.filter((r) => r.report_date >= since30);
   const previousRows = rows.filter((r) => r.report_date < since30);
@@ -54,13 +53,18 @@ export default async function DashboardHomePage({
   const current = computeTotal(currentRows);
   const previous = computeTotal(previousRows);
 
-  const [{ data: ltvRows }, { data: retentionRows }] = await Promise.all([
+  const [{ data: ltvRows }, { data: retentionRows }, { data: newVsReturningRows }] = await Promise.all([
     supabase.from("customer_ltv").select("customer_id, order_count").eq("client_id", selectedClient),
     supabase
       .from("cohort_retention")
       .select("retention_rate")
       .eq("client_id", selectedClient)
       .eq("months_since_cohort", 1),
+    supabase
+      .from("daily_new_vs_returning")
+      .select("new_customers, returning_customers")
+      .eq("client_id", selectedClient)
+      .gte("order_date", since30),
   ]);
 
   const totalCustomers = ltvRows?.length ?? 0;
@@ -69,6 +73,8 @@ export default async function DashboardHomePage({
     retentionRows && retentionRows.length > 0
       ? retentionRows.reduce((acc, r) => acc + Number(r.retention_rate), 0) / retentionRows.length
       : null;
+  const newCustomers30d = (newVsReturningRows ?? []).reduce((acc, r) => acc + (r.new_customers as number), 0);
+  const returningCustomers30d = (newVsReturningRows ?? []).reduce((acc, r) => acc + (r.returning_customers as number), 0);
 
   const revenue = Number(current.gross_revenue);
   const prevRevenue = Number(previous.gross_revenue);
@@ -101,6 +107,8 @@ export default async function DashboardHomePage({
           deltaPct={null}
         />
         <StatTile label="Repeat Customers" value={fmtNum(repeatCustomers)} deltaPct={null} />
+        <StatTile label="New Customers (30d)" value={fmtNum(newCustomers30d)} deltaPct={null} />
+        <StatTile label="Returning Customers (30d)" value={fmtNum(returningCustomers30d)} deltaPct={null} />
       </div>
 
       {currentRows.length > 0 ? (

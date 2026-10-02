@@ -15,7 +15,7 @@ export default function Sidebar({ role }: { role: Role }) {
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-900 bg-zinc-950 px-3 py-4">
-      <div className="mb-6 px-2">
+      <div className="mb-6 border-b border-zinc-900 px-2 pb-4">
         <p className="text-sm font-bold leading-none text-zinc-50">CURIOUS</p>
         <p className={`text-sm font-bold leading-none ${theme.accentText}`}>APES</p>
       </div>
@@ -30,10 +30,10 @@ export default function Sidebar({ role }: { role: Role }) {
               href={item.href}
               target={item.external ? "_blank" : undefined}
               rel={item.external ? "noopener noreferrer" : undefined}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+              className={`flex items-center gap-2.5 rounded-md border-l-2 px-3 py-2 text-sm transition-all ${
                 active
-                  ? `${theme.badge} font-medium`
-                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+                  ? `${theme.badge} border-current font-medium`
+                  : "border-transparent text-zinc-400 hover:translate-x-0.5 hover:bg-zinc-900 hover:text-zinc-100"
               }`}
             >
               <Icon size={16} />
@@ -56,10 +56,10 @@ export default function Sidebar({ role }: { role: Role }) {
                 <Link
                   key={item.label}
                   href={item.href}
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                  className={`flex items-center gap-2.5 rounded-md border-l-2 px-3 py-2 text-sm transition-all ${
                     active
-                      ? `${theme.badge} font-medium`
-                      : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+                      ? `${theme.badge} border-current font-medium`
+                      : "border-transparent text-zinc-400 hover:translate-x-0.5 hover:bg-zinc-900 hover:text-zinc-100"
                   }`}
                 >
                   <Icon size={16} />

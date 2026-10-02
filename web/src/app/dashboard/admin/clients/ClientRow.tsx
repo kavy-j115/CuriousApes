@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { deleteClientRecord, updateClientReportConfig, updateClientNotifications, reassignClient } from "../actions";
-import { AVAILABLE_METRICS, defaultLabel, DEFAULT_ROAS_THRESHOLDS, type MetricKey, type ReportConfig } from "@/lib/reportColumns";
+import { AVAILABLE_METRICS, ALL_METRIC_KEYS, defaultLabel, DEFAULT_ROAS_THRESHOLDS, type MetricKey, type ReportConfig, type DerivedColumn } from "@/lib/reportColumns";
+import { validateFormula } from "@/lib/formulaEval";
 
 type AlertThresholds = { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null;
 
@@ -40,6 +41,7 @@ export default function ClientRow({
   const [dangerThreshold, setDangerThreshold] = useState(
     String(client.report_config?.roasThresholds?.danger ?? DEFAULT_ROAS_THRESHOLDS.danger)
   );
+  const [derivedColumns, setDerivedColumns] = useState<DerivedColumn[]>(client.report_config?.derivedColumns ?? []);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [revenuePct, setRevenuePct] = useState(String(client.alert_thresholds?.revenue_change_pct ?? ""));
   const [cacPct, setCacPct] = useState(String(client.alert_thresholds?.cac_change_pct ?? ""));
@@ -58,13 +60,37 @@ export default function ClientRow({
     });
   }
 
+  function addDerivedColumn() {
+    setDerivedColumns((prev) => [...prev, { key: `custom_${prev.length + 1}`, label: "", formula: "", isPct: false }]);
+  }
+
+  function updateDerivedColumn(index: number, patch: Partial<DerivedColumn>) {
+    setDerivedColumns((prev) => prev.map((dc, i) => (i === index ? { ...dc, ...patch } : dc)));
+  }
+
+  function removeDerivedColumn(index: number) {
+    setDerivedColumns((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // A derived column's formula can reference any built-in metric plus any
+  // *earlier* derived column's key (chaining) -- validated against that
+  // combined whitelist so a typo'd field name is caught here, in the
+  // editor, rather than silently producing a blank column later.
+  function formulaError(index: number): string | null {
+    const dc = derivedColumns[index];
+    if (!dc.formula.trim()) return null;
+    const allowed = [...ALL_METRIC_KEYS, ...derivedColumns.slice(0, index).map((d) => d.key)];
+    return validateFormula(dc.formula, allowed);
+  }
+
   function saveColumns() {
     startTransition(async () => {
       const good = Number(goodThreshold) || DEFAULT_ROAS_THRESHOLDS.good;
       const danger = Number(dangerThreshold) || DEFAULT_ROAS_THRESHOLDS.danger;
       const thresholdsChanged = good !== DEFAULT_ROAS_THRESHOLDS.good || danger !== DEFAULT_ROAS_THRESHOLDS.danger;
+      const validDerived = derivedColumns.filter((dc) => dc.key.trim() && dc.label.trim() && dc.formula.trim() && !formulaError(derivedColumns.indexOf(dc)));
 
-      if (useDefault && !thresholdsChanged) {
+      if (useDefault && !thresholdsChanged && validDerived.length === 0) {
         await updateClientReportConfig(client.client_id, null);
         return;
       }
@@ -75,7 +101,11 @@ export default function ClientRow({
             key: m.key,
             label: labels[m.key]?.trim() || m.defaultLabel,
           }));
-      await updateClientReportConfig(client.client_id, { columns, roasThresholds: { good, danger } });
+      await updateClientReportConfig(client.client_id, {
+        columns,
+        roasThresholds: { good, danger },
+        derivedColumns: validDerived.length > 0 ? validDerived : undefined,
+      });
     });
   }
 
@@ -198,6 +228,48 @@ export default function ClientRow({
                 ))}
               </div>
             )}
+
+            <div className="mt-4 border-t border-zinc-900 pt-3">
+              <p className="mb-1.5 text-xs font-medium text-zinc-300">Extra computed columns</p>
+              <p className="mb-2 text-xs text-zinc-500">
+                A formula over: {ALL_METRIC_KEYS.join(", ")} (+ -  * /  and parentheses).
+              </p>
+              <div className="flex flex-col gap-2">
+                {derivedColumns.map((dc, i) => {
+                  const error = formulaError(i);
+                  return (
+                    <div key={i} className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Label"
+                        value={dc.label}
+                        onChange={(e) => updateDerivedColumn(i, { label: e.target.value })}
+                        className="w-32 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
+                      />
+                      <input
+                        type="text"
+                        placeholder="e.g. purchase_value / amount_spent"
+                        value={dc.formula}
+                        onChange={(e) => updateDerivedColumn(i, { formula: e.target.value })}
+                        className={`flex-1 min-w-48 rounded border bg-zinc-950 px-2 py-1 text-xs text-zinc-100 ${error ? "border-red-700" : "border-zinc-800"}`}
+                      />
+                      <label className="flex items-center gap-1 text-xs text-zinc-400">
+                        <input type="checkbox" checked={dc.isPct} onChange={(e) => updateDerivedColumn(i, { isPct: e.target.checked })} />
+                        %
+                      </label>
+                      <button onClick={() => removeDerivedColumn(i)} className="text-xs text-zinc-500 hover:text-red-400">
+                        remove
+                      </button>
+                      {error && <p className="w-full text-xs text-red-400">{error}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={addDerivedColumn} className="mt-2 text-xs text-sky-400 hover:underline">
+                + Add computed column
+              </button>
+            </div>
+
             <button onClick={saveColumns} disabled={pending} className="mt-3 rounded bg-sky-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               {pending ? "Saving…" : "Save columns"}
             </button>

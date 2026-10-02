@@ -2,9 +2,13 @@
 yesterday's and flags genuine threshold breaches. Deliberately conservative
 -- per the original brief, "do not generate unnecessary notifications."
 
-CAC here is spend / total orders, not spend / new customers -- we don't
-track new-vs-returning customers yet, so this is an approximation. Worth
-knowing before trusting an alert on it; revisit once that tracking exists.
+CAC now uses spend / new customers when that figure is available (merged
+in by the caller from daily_new_vs_returning, see
+sql/019_new_vs_returning.sql and src/scheduler/run_pipeline.py) -- the
+accurate definition. Falls back to spend / total orders otherwise, which
+is what this project used before that tracking existed; the alert message
+itself states which basis was actually used, rather than silently
+treating them as equivalent.
 """
 
 from dataclasses import dataclass
@@ -52,9 +56,10 @@ def check_metric_alerts(today_row: dict, yesterday_row: dict | None, thresholds:
         if today_cac is not None and yesterday_cac is not None:
             change = _pct_change(today_cac, yesterday_cac)
             if change is not None and change >= cac_threshold:
+                basis = "new customers" if today_row.get("new_customers") and yesterday_row.get("new_customers") else "orders"
                 alerts.append(Alert(
                     "cac_increase",
-                    f"CAC (spend/orders) rose {change:.1f}% (${yesterday_cac:.2f} -> ${today_cac:.2f}), "
+                    f"CAC (spend/{basis}) rose {change:.1f}% (${yesterday_cac:.2f} -> ${today_cac:.2f}), "
                     f"exceeding the {cac_threshold}% threshold.",
                 ))
 
@@ -76,8 +81,13 @@ def check_metric_alerts(today_row: dict, yesterday_row: dict | None, thresholds:
 
 def _cac(row: dict) -> float | None:
     spend = row.get("amount_spent")
+    if spend is None:
+        return None
+    new_customers = row.get("new_customers")
+    if new_customers:
+        return float(spend) / new_customers
     orders = row.get("order_count")
-    if spend is None or not orders:
+    if not orders:
         return None
     return float(spend) / orders
 
