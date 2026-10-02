@@ -12,7 +12,10 @@ AVAILABLE_METRICS: dict[str, tuple[str, str]] = {
     "add_to_carts": ("Sessions with cart additions", "#,##0"),
     "order_count": ("Orders", "#,##0"),
     "gross_revenue": ("Gross sales", "#,##0.00"),
-    "net_revenue": ("Total Sales (Net of Refunds)", "#,##0.00"),
+    "net_revenue": ("Net Sales", "#,##0.00"),
+    "total_sales": ("Total Sales", "#,##0.00"),
+    "total_discounts": ("Discounts", "#,##0.00"),
+    "total_refunded": ("Refunds", "#,##0.00"),
     "aov": ("Average order value", "#,##0.00"),
     "amount_spent": ("Amount Spent (Ad Spent)", "#,##0.00"),
     "purchase_value": ("Purchase Value (Ad Account)", "#,##0.00"),
@@ -27,7 +30,7 @@ AVAILABLE_METRICS: dict[str, tuple[str, str]] = {
 # What every client gets unless report_config overrides it -- net_revenue
 # left out (opt-in per client), matching the TS DEFAULT_METRIC_KEYS exactly.
 DEFAULT_METRIC_KEYS = [
-    "sessions", "add_to_carts", "order_count", "gross_revenue", "aov",
+    "sessions", "add_to_carts", "order_count", "gross_revenue", "total_sales", "aov",
     "amount_spent", "purchase_value", "proas", "atc_pct", "conversion_pct",
     "checkout_pct", "mtd_sale", "lmtd_sale",
 ]

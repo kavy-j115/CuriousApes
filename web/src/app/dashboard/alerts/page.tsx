@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getSupabase, getClients } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 
 const TYPE_STYLES: Record<string, string> = {
@@ -28,9 +28,8 @@ export default async function AlertsPage({
   searchParams: Promise<{ client?: string }>;
 }) {
   const { client } = await searchParams;
-  const supabase = await createClient();
-
-  const { data: clients } = await supabase.from("clients").select("client_id, display_name").order("display_name");
+  const supabase = await getSupabase();
+  const clients = await getClients();
   const selectedClient = await resolveSelectedClient(client, clients ?? []);
 
   const { data: alerts } = selectedClient

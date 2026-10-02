@@ -67,8 +67,14 @@ def load_all(conn=None) -> list[dict]:
             FROM clients ORDER BY client_id;
             """
         )
+        rows = cur.fetchall()
+        # A client with its own Meta System User stores its token as
+        # "<client_id>.meta_ads.access_token"; everyone else uses the shared
+        # agency token. Names only -- no secret value is read here.
+        cur.execute("SELECT name FROM vault.secrets WHERE name LIKE %s;", ("%.meta_ads.access_token",))
+        own_meta_token = {name for (name,) in cur.fetchall()}
         for (client_id, display_name, alert_thresholds, whatsapp_recipients,
-             store_domain, ad_account_id, ga4_property_id, sync_enabled) in cur.fetchall():
+             store_domain, ad_account_id, ga4_property_id, sync_enabled) in rows:
             config = by_id.setdefault(client_id, {"client_id": client_id, "display_name": display_name})
             config["thresholds"] = alert_thresholds or {}
             config["notifications"] = {"whatsapp_recipients": list(whatsapp_recipients or [])}
@@ -81,7 +87,8 @@ def load_all(conn=None) -> list[dict]:
             if ad_account_id:
                 meta = config.setdefault("meta_ads", {})
                 meta["ad_account_id"] = ad_account_id
-                meta.setdefault("access_token_secret", "agency.meta_ads.access_token")
+                own = f"{client_id}.meta_ads.access_token"
+                meta.setdefault("access_token_secret", own if own in own_meta_token else "agency.meta_ads.access_token")
             if ga4_property_id:
                 ga4 = config.setdefault("ga4", {})
                 ga4["property_id"] = ga4_property_id

@@ -310,11 +310,67 @@ export async function reassignClient(clientId: string, newUserId: string | null)
   revalidatePath("/dashboard/admin/permissions");
 }
 
+// Collab with a USER rather than a client: gives `userId` 24-hour access to
+// every client `otherUserId` has permanent access to (e.g. covering for a
+// colleague who is out). A client `userId` already has permanently is left
+// alone -- upserting would overwrite that permanent grant with an expiring one.
+export async function grantCollabWithUser(
+  userId: string,
+  otherUserId: string
+): Promise<{ granted: number } | { error: string }> {
+  const { supabase } = await requireAdmin();
+  if (userId === otherUserId) return { error: "Pick a different user." };
+
+  const [{ data: theirs }, { data: mine }] = await Promise.all([
+    supabase.from("client_access").select("client_id").eq("user_id", otherUserId).is("expires_at", null),
+    supabase.from("client_access").select("client_id, expires_at").eq("user_id", userId),
+  ]);
+  const alreadyPermanent = new Set((mine ?? []).filter((r) => !r.expires_at).map((r) => r.client_id));
+  const toGrant = (theirs ?? []).map((r) => r.client_id).filter((id) => !alreadyPermanent.has(id));
+  if (toGrant.length === 0) return { error: "That user has no clients this person doesn't already have." };
+
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from("client_access")
+    .upsert(toGrant.map((client_id) => ({ user_id: userId, client_id, expires_at: expiresAt })), { onConflict: "user_id,client_id" });
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/admin/users");
+  revalidatePath("/dashboard/admin/clients");
+  revalidatePath("/dashboard/admin/permissions");
+  return { granted: toGrant.length };
+}
+
+// The client-side mirror of setUserClientAccess: replaces who has PERMANENT
+// access to this client. Active collab (expiring) grants are left untouched.
+export async function setClientUserAccess(clientId: string, userIds: string[]) {
+  const { supabase } = await requireAdmin();
+
+  const { error: deleteError } = await supabase
+    .from("client_access")
+    .delete()
+    .eq("client_id", clientId)
+    .is("expires_at", null);
+  if (deleteError) throw new Error(deleteError.message);
+
+  if (userIds.length > 0) {
+    const { error: insertError } = await supabase
+      .from("client_access")
+      .insert(userIds.map((user_id) => ({ user_id, client_id: clientId })));
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  revalidatePath("/dashboard/admin/clients");
+  revalidatePath("/dashboard/admin/users");
+  revalidatePath("/dashboard/admin/permissions");
+}
+
 export async function revokeAccess(userId: string, clientId: string) {
   const { supabase } = await requireAdmin();
   const { error } = await supabase.from("client_access").delete().eq("user_id", userId).eq("client_id", clientId);
   if (error) throw new Error(error.message);
 
+  revalidatePath("/dashboard/admin/clients");
   revalidatePath("/dashboard/admin/users");
   revalidatePath("/dashboard/admin/permissions");
 }

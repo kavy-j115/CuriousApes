@@ -5,6 +5,7 @@ import {
   FileBarChart,
   GitCompare,
   Users2,
+  Share2,
   Bell,
   Sparkles,
   Building2,
@@ -46,6 +47,7 @@ export const MAIN_NAV: NavItem[] = [
   { label: "Alerts", href: "/dashboard/alerts", icon: Bell, roles: ["admin", "user", "client"] },
   { label: "AI Report", href: "/dashboard/ai-report", icon: Sparkles, roles: ["admin", "user", "client"] },
   { label: "Segments", href: "/dashboard/segments", icon: Users2, roles: ["admin", "user"] },
+  { label: "Collab", href: "/dashboard/collab", icon: Share2, roles: ["admin", "user"] },
 ];
 
 export const ADMIN_NAV: NavItem[] = [

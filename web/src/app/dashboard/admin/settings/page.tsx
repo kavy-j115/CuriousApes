@@ -2,9 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { load as loadYaml } from "js-yaml";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentProfile, assertRole, type Role } from "@/lib/auth/profile";
-import UserRow from "../users/UserRow";
-import Link from "next/link";
+import { getCurrentProfile, assertRole } from "@/lib/auth/profile";
 
 const CONFIG_DIR = path.join(process.cwd(), "..", "config");
 
@@ -33,53 +31,9 @@ export default async function AdminSettingsPage() {
     readError = e instanceof Error ? e.message : "Failed to read config/whatsapp.yaml.";
   }
 
-  const [{ data: allClients }, { data: profiles }, { data: access }, { data: clientUsers }] = await Promise.all([
-    supabase
-      .from("clients")
-      .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients")
-      .order("display_name"),
-    supabase.from("user_profiles").select("id, email, display_name, role").order("created_at"),
-    supabase.from("client_access").select("user_id, client_id, expires_at"),
-    supabase.from("user_profiles").select("id, email, display_name").eq("role", "client"),
-  ]);
-
-  const accessByUser = new Map<string, { client_id: string; expires_at: string | null }[]>();
-  const assignedUserByClient = new Map<string, string>();
-  for (const row of access ?? []) {
-    const list = accessByUser.get(row.user_id) ?? [];
-    list.push({ client_id: row.client_id, expires_at: row.expires_at });
-    accessByUser.set(row.user_id, list);
-    if (!row.expires_at && (clientUsers ?? []).some((u) => u.id === row.user_id)) {
-      assignedUserByClient.set(row.client_id, row.user_id);
-    }
-  }
-
   return (
     <div className="max-w-3xl">
       <h1 className="mb-4 text-xl font-semibold text-zinc-50">System Settings</h1>
-
-      <div className="mb-8">
-        <p className="mb-2 text-sm font-semibold text-zinc-200">Users &amp; clients</p>
-        <div className="mb-4 flex flex-col gap-3">
-          {(profiles ?? []).map((p) => (
-            <UserRow
-              key={p.id}
-              user={{
-                id: p.id as string,
-                email: p.email as string | null,
-                display_name: p.display_name as string | null,
-                role: p.role as Role,
-                access: accessByUser.get(p.id as string) ?? [],
-              }}
-              clients={allClients ?? []}
-              currentUserId={profile.id}
-            />
-          ))}
-        </div>
-        <Link href="/dashboard/admin/clients" className="text-sm text-accent hover:underline">
-          Manage clients
-        </Link>
-      </div>
 
       <p className="mb-3 text-sm font-semibold text-zinc-200">WhatsApp sender</p>
       {readError && (

@@ -13,6 +13,7 @@ const DASHBOARD_STEPS: Record<string, Step> = {
   alerts: { target: "nav-Alerts", title: "Alerts", body: "Drops in revenue or ROAS, rising CAC, sync failures and data issues." },
   ai: { target: "nav-AI Report", title: "AI Report", body: "A plain-language summary of each day's numbers." },
   segments: { target: "nav-Segments", title: "Segments", body: "Build customer lists from a Shopify export, and see which products sell best." },
+  collab: { target: "nav-Collab", title: "Collab", body: "Give a colleague 24-hour access to one of your clients, for example while you're out." },
   clients: { target: "nav-Clients", title: "Clients", body: "Add a client, connect their Shopify, Meta and GA4, and switch syncing on." },
   users: { target: "nav-Users", title: "Users", body: "Create accounts and choose which clients each person can see." },
 };
@@ -24,7 +25,7 @@ function stepsFor(role: Role): Step[] {
     steps.push({ target: "client-dropdown", title: "Client switcher", body: "Choose which client you're viewing. It stays selected as you move between pages." });
   }
   steps.push(s.dashboard, s.reports, s.comparisons, s.alerts, s.ai);
-  if (role !== "client") steps.push(s.segments);
+  if (role !== "client") steps.push(s.segments, s.collab);
   if (role === "admin") steps.push(s.clients, s.users);
   steps.push({ title: "You're set", body: "You can replay this tour any time from your profile menu." });
   return steps;

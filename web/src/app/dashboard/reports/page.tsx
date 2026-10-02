@@ -1,53 +1,87 @@
 import { Download } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabase, getClients, todayIn, shiftDate } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { ReportRow, computeTotal } from "@/lib/reportMath";
-import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
-import ReportDateControls from "../_components/ReportDateControls";
+import { resolveReportColumns, attachDerivedColumns, type ColumnDef } from "@/lib/reportColumns";
 import MetricsCharts from "@/app/MetricsCharts";
 
 const VIEWS = ["table", "chart"] as const;
 type View = (typeof VIEWS)[number];
 
+const DOWNLOADS = [
+  { type: "daily", label: "Daily" },
+  { type: "weekly", label: "Weekly" },
+  { type: "monthly", label: "Monthly" },
+] as const;
+
+function ReportTable({ columns, rows }: { columns: ColumnDef[]; rows: ReportRow[] }) {
+  return (
+    <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
+            {columns.map((c) => (
+              <th key={c.key} className="whitespace-nowrap px-2 py-2">{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.report_date} className="border-b border-zinc-900 text-zinc-300">
+              {columns.map((c) => (
+                <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; from?: string; to?: string; view?: string }>;
+  searchParams: Promise<{ client?: string; view?: string }>;
 }) {
-  const { client, from, to, view: viewParam } = await searchParams;
+  const { client, view: viewParam } = await searchParams;
   const view: View = VIEWS.includes(viewParam as View) ? (viewParam as View) : "table";
 
-  const supabase = await createClient();
-  const { data: clients } = await supabase.from("clients").select("client_id, display_name, report_config").order("display_name");
-  const selectedClient = await resolveSelectedClient(client, clients ?? []);
-  const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
+  const supabase = await getSupabase();
+  const clients = await getClients();
+  const selectedClient = await resolveSelectedClient(client, clients);
+  const selected = clients.find((c) => c.client_id === selectedClient);
+  const reportConfig = selected?.report_config ?? null;
   const reportColumns = resolveReportColumns(reportConfig);
 
-  const isSingleDay = !!from && (!to || to === from);
-  const isRange = !!from && !!to && to !== from;
+  // Day by day only for the last 7 days; everything older is folded into the
+  // 7-day and 30-day summaries below it. Dates are the store's own days.
+  const today = todayIn(selected?.timezone);
+  const since7 = shiftDate(today, -6);
+  const since30 = shiftDate(today, -29);
 
-  let query = supabase
+  const { data, error } = await supabase
     .from("daily_report_metrics")
     .select("*")
     .eq("client_id", selectedClient)
+    .gte("report_date", since30)
     .order("report_date", { ascending: false });
 
-  if (isSingleDay) query = query.eq("report_date", from);
-  else if (isRange) query = query.gte("report_date", from).lte("report_date", to);
-  else query = query.limit(28);
+  const rows30 = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
+  const rows7 = rows30.filter((r) => r.report_date >= since7);
 
-  const { data, error } = await query;
-  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
-  const showTotal = !isSingleDay && rows.length > 1;
+  // A summary row is the same weighted total the Excel report's Total row
+  // uses; derived columns are recomputed from the totals, not summed.
+  const summaryRow = (rows: ReportRow[], label: string): ReportRow => ({
+    ...attachDerivedColumns([computeTotal(rows)], reportConfig?.derivedColumns)[0],
+    report_date: label,
+  });
+  const summaries = [
+    ...(rows7.length > 0 ? [summaryRow(rows7, "Last 7 days")] : []),
+    ...(rows30.length > 0 ? [summaryRow(rows30, "Last 30 days")] : []),
+  ];
 
-  const viewHref = (v: View) => {
-    const params = new URLSearchParams();
-    if (selectedClient) params.set("client", selectedClient);
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    params.set("view", v);
-    return `/dashboard/reports?${params.toString()}`;
-  };
+  const viewHref = (v: View) => `/dashboard/reports?${new URLSearchParams({ ...(selectedClient ? { client: selectedClient } : {}), view: v })}`;
 
   return (
     <div>
@@ -67,60 +101,34 @@ export default async function ReportsPage({
               </a>
             ))}
           </div>
-          {selectedClient && (
-            <a
-              href={`/api/reports/${selectedClient}`}
-              aria-label="Download Excel Report"
-              title="Download Excel Report"
-              className="flex items-center justify-center rounded-md border border-zinc-800 p-2 text-accent hover:bg-zinc-900"
-            >
-              <Download size={16} />
-            </a>
-          )}
         </div>
-        <ReportDateControls />
+        {selectedClient && (
+          <div className="flex items-center gap-2">
+            {DOWNLOADS.map((d) => (
+              <a
+                key={d.type}
+                href={`/api/reports/${selectedClient}?type=${d.type}`}
+                title={`Download ${d.label.toLowerCase()} Excel report`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-accent hover:text-accent"
+              >
+                <Download size={13} />
+                {d.label}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
 
-      {error && <p className="rounded bg-red-950/60 p-4 text-red-300">Failed to load report: {error.message}</p>}
-      {!error && rows.length === 0 && <p className="text-sm text-zinc-500">No data for this selection.</p>}
+      {error && <p className="rounded bg-status-bad/10 p-4 text-status-bad">Failed to load report: {error.message}</p>}
+      {!error && rows30.length === 0 && <p className="text-sm text-zinc-500">No data for this client yet.</p>}
 
-      {view === "chart" && !error && rows.length > 0 && <MetricsCharts data={[...rows].reverse()} />}
+      {!error && rows7.length > 0 && view === "chart" && <MetricsCharts data={rows7} />}
+      {!error && rows7.length > 0 && view === "table" && <ReportTable columns={reportColumns} rows={rows7} />}
 
-      {view === "table" && !error && rows.length > 0 && (
-        <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
-                {reportColumns.map((c) => (
-                  <th key={c.key} className="whitespace-nowrap px-2 py-2">{c.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.report_date} className="border-b border-zinc-900 text-zinc-300">
-                  {reportColumns.map((c) => (
-                    <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
-                  ))}
-                </tr>
-              ))}
-              {showTotal && (() => {
-                // Derived columns in the Total row are recomputed from the
-                // already-totaled inputs (correct for ratio-style formulas
-                // like a blended ROAS), not summed per-day -- same
-                // "recompute, don't sum" choice the built-in ratio columns
-                // (AOV, PROAS) already make in computeTotal().
-                const total = attachDerivedColumns([computeTotal(rows)], reportConfig?.derivedColumns)[0];
-                return (
-                  <tr className="border-t-2 border-zinc-700 font-semibold text-zinc-100">
-                    {reportColumns.map((c) => (
-                      <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(total) ?? ""}`}>{c.fmt(total)}</td>
-                    ))}
-                  </tr>
-                );
-              })()}
-            </tbody>
-          </table>
+      {!error && summaries.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 text-base font-semibold text-zinc-50">Summary</h2>
+          <ReportTable columns={reportColumns} rows={summaries} />
         </div>
       )}
     </div>

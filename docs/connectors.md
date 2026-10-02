@@ -15,11 +15,15 @@ Key mechanics:
   includes `extensions.cost.throttleStatus`; the connector backs off with a
   short sleep when the remaining bucket gets low, rather than guessing a
   fixed delay.
-- **Incremental sync hook:** `fetch_orders(..., updated_at_min=...)` accepts
-  an ISO timestamp and filters server-side (`query: "updated_at:>=..."`).
-  Not used yet — wired up when we build the daily sync job — but built in
-  now since retrofitting it later would mean redesigning the function
-  signature after other code already depends on it.
+- **Date window:** `fetch_orders(..., created_at_min=...)` accepts a date or
+  ISO timestamp and filters server-side (`query: "created_at:>=..."`, sorted
+  by creation). The daily run re-fetches the last N days of orders by
+  *creation date*, so each run covers exactly the order dates asked for and
+  matches what Shopify's own reports show. An earlier version filtered on
+  `updated_at`, which pulled in old orders that had merely changed recently
+  and left older days only partly filled -- misleading, so it was dropped.
+  Trade-off: a refund/cancellation on an order older than the window isn't
+  picked up until a run's window covers that order's date again.
 
 `src/ingestion/shopify_orders.py` calls the connector and **upserts** into
 `raw_shopify_orders` (insert, or overwrite `raw_data` if the row already

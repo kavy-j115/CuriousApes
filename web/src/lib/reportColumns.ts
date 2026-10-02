@@ -13,6 +13,9 @@ export type MetricKey =
   | "order_count"
   | "gross_revenue"
   | "net_revenue"
+  | "total_sales"
+  | "total_discounts"
+  | "total_refunded"
   | "aov"
   | "amount_spent"
   | "purchase_value"
@@ -30,7 +33,10 @@ export const AVAILABLE_METRICS: { key: MetricKey; defaultLabel: string }[] = [
   { key: "add_to_carts", defaultLabel: "Cart Adds" },
   { key: "order_count", defaultLabel: "Orders" },
   { key: "gross_revenue", defaultLabel: "Gross Sales" },
-  { key: "net_revenue", defaultLabel: "Total Sales (Net of Refunds)" },
+  { key: "net_revenue", defaultLabel: "Net Sales" },
+  { key: "total_sales", defaultLabel: "Total Sales" },
+  { key: "total_discounts", defaultLabel: "Discounts" },
+  { key: "total_refunded", defaultLabel: "Refunds" },
   { key: "aov", defaultLabel: "AOV" },
   { key: "amount_spent", defaultLabel: "Ad Spend" },
   { key: "purchase_value", defaultLabel: "Purchase Value" },
@@ -50,6 +56,7 @@ export const DEFAULT_METRIC_KEYS: MetricKey[] = [
   "add_to_carts",
   "order_count",
   "gross_revenue",
+  "total_sales",
   "aov",
   "amount_spent",
   "purchase_value",

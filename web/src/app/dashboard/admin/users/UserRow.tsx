@@ -2,9 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
-import { updateUserRole, setUserClientAccess, grantTemporaryAccess, revokeAccess, deleteUserRecord } from "../actions";
+import {
+  updateUserRole,
+  setUserClientAccess,
+  grantTemporaryAccess,
+  grantCollabWithUser,
+  revokeAccess,
+  deleteUserRecord,
+} from "../actions";
 import Select from "../../_components/Select";
-import Checkbox from "../../_components/Checkbox";
+import MultiSelect from "../../_components/MultiSelect";
 import type { Role } from "@/lib/auth/profile";
 
 type Client = { client_id: string; display_name: string };
@@ -16,17 +23,29 @@ type UserWithAccess = {
   role: Role;
   access: AccessRow[];
 };
+type CollabCandidate = { id: string; label: string };
 
 function hoursLeft(expiresAt: string): number {
   return Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 3_600_000));
 }
 
-export default function UserRow({ user, clients, currentUserId }: { user: UserWithAccess; clients: Client[]; currentUserId: string }) {
+export default function UserRow({
+  user,
+  clients,
+  collabCandidates,
+  currentUserId,
+}: {
+  user: UserWithAccess;
+  clients: Client[];
+  collabCandidates: CollabCandidate[]; // other non-admin users who have clients to share
+  currentUserId: string;
+}) {
   const [role, setRole] = useState<Role>(user.role);
   const permanentIds = user.access.filter((a) => !a.expires_at).map((a) => a.client_id);
   const temporary = user.access.filter((a) => a.expires_at);
-  const [selected, setSelected] = useState<Set<string>>(new Set(permanentIds));
-  const [grantClientId, setGrantClientId] = useState("");
+  const [selected, setSelected] = useState<string[]>(permanentIds);
+  const [collabTarget, setCollabTarget] = useState(""); // "user:<id>" or "client:<id>"
+  const [collabMessage, setCollabMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [deleted, setDeleted] = useState<{ fullyDeleted: boolean } | null>(null);
   const isSelf = user.id === currentUserId;
@@ -34,15 +53,7 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
   const unassignedClients = clients.filter(
     (c) => !permanentIds.includes(c.client_id) && !temporary.some((t) => t.client_id === c.client_id)
   );
-
-  function toggleClient(clientId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(clientId)) next.delete(clientId);
-      else next.add(clientId);
-      return next;
-    });
-  }
+  const otherUsers = collabCandidates.filter((c) => c.id !== user.id);
 
   function handleRoleChange(newRole: Role) {
     setRole(newRole);
@@ -53,15 +64,22 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
 
   function saveAccess() {
     startTransition(async () => {
-      await setUserClientAccess(user.id, Array.from(selected));
+      await setUserClientAccess(user.id, selected);
     });
   }
 
   function grant() {
-    if (!grantClientId) return;
+    if (!collabTarget) return;
+    setCollabMessage(null);
+    const [kind, id] = [collabTarget.slice(0, collabTarget.indexOf(":")), collabTarget.slice(collabTarget.indexOf(":") + 1)];
     startTransition(async () => {
-      await grantTemporaryAccess(user.id, grantClientId);
-      setGrantClientId("");
+      if (kind === "user") {
+        const result = await grantCollabWithUser(user.id, id);
+        setCollabMessage("error" in result ? result.error : `Granted 24h access to ${result.granted} client(s).`);
+      } else {
+        await grantTemporaryAccess(user.id, id);
+      }
+      setCollabTarget("");
     });
   }
 
@@ -79,7 +97,7 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
     });
   }
 
-  const dirty = selected.size !== permanentIds.length || permanentIds.some((c) => !selected.has(c));
+  const dirty = selected.length !== permanentIds.length || permanentIds.some((c) => !selected.includes(c));
 
   if (deleted) {
     return (
@@ -115,51 +133,65 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
       </div>
 
       {role !== "admin" && (
-        <div className="mt-3 border-t border-zinc-900 pt-3">
-          <p className="mb-1.5 text-xs font-medium text-zinc-400">Permanent client access</p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-            {clients.map((c) => (
-              <Checkbox
-                key={c.client_id}
-                checked={selected.has(c.client_id)}
-                onChange={() => toggleClient(c.client_id)}
-                label={c.display_name}
+        <div className="mt-3 flex flex-col gap-3 border-t border-zinc-900 pt-3">
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-zinc-400">Clients</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <MultiSelect
+                placeholder="No clients"
+                options={clients.map((c) => ({ id: c.client_id, label: c.display_name }))}
+                selected={selected}
+                onChange={setSelected}
               />
-            ))}
-            <button onClick={saveAccess} disabled={!dirty || pending} className="rounded bg-accent px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">
-              {pending ? "Saving…" : "Save"}
-            </button>
+              <button onClick={saveAccess} disabled={!dirty || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                {pending ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
 
-          <p className="mb-1.5 mt-3 text-xs font-medium text-zinc-400">Temporary access (collab, 24h)</p>
-          <div className="flex flex-col gap-1.5">
-            {temporary.map((t) => {
-              const client = clients.find((c) => c.client_id === t.client_id);
-              const hours = hoursLeft(t.expires_at!);
-              return (
-                <div key={t.client_id} className="flex items-center gap-2 text-xs text-zinc-300">
-                  <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
-                    {client?.display_name ?? t.client_id} -- {hours > 0 ? `${hours}h left` : "expired"}
-                  </span>
-                  <button onClick={() => revoke(t.client_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
-                    revoke
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h)</p>
+            <div className="flex flex-col gap-1.5">
+              {temporary.map((t) => {
+                const client = clients.find((c) => c.client_id === t.client_id);
+                const hours = hoursLeft(t.expires_at!);
+                return (
+                  <div key={t.client_id} className="flex items-center gap-2 text-xs text-zinc-300">
+                    <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
+                      {client?.display_name ?? t.client_id} -- {hours > 0 ? `${hours}h left` : "expired"}
+                    </span>
+                    <button onClick={() => revoke(t.client_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
+                      revoke
+                    </button>
+                  </div>
+                );
+              })}
+              {(otherUsers.length > 0 || unassignedClients.length > 0) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={collabTarget} onChange={setCollabTarget}>
+                    <option value="">Share access with…</option>
+                    {otherUsers.length > 0 && (
+                      <optgroup label="Another user's clients">
+                        {otherUsers.map((u) => (
+                          <option key={u.id} value={`user:${u.id}`}>{u.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {unassignedClients.length > 0 && (
+                      <optgroup label="A single client">
+                        {unassignedClients.map((c) => (
+                          <option key={c.client_id} value={`client:${c.client_id}`}>{c.display_name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </Select>
+                  <button onClick={grant} disabled={!collabTarget || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                    Grant
                   </button>
                 </div>
-              );
-            })}
-            {unassignedClients.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Select value={grantClientId} onChange={setGrantClientId}>
-                  <option value="">Grant 24h access to…</option>
-                  {unassignedClients.map((c) => (
-                    <option key={c.client_id} value={c.client_id}>{c.display_name}</option>
-                  ))}
-                </Select>
-                <button onClick={grant} disabled={!grantClientId || pending} className="rounded bg-accent px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">
-                  Grant
-                </button>
-              </div>
-            )}
+              )}
+              {collabMessage && <p className="text-xs text-zinc-400">{collabMessage}</p>}
+            </div>
           </div>
         </div>
       )}

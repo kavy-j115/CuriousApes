@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getSupabase, getClients } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import DateSelector from "./DateSelector";
 
@@ -8,9 +8,8 @@ export default async function AiReportPage({
   searchParams: Promise<{ client?: string; date?: string }>;
 }) {
   const { client, date } = await searchParams;
-  const supabase = await createClient();
-
-  const { data: clients } = await supabase.from("clients").select("client_id, display_name").order("display_name");
+  const supabase = await getSupabase();
+  const clients = await getClients();
   const selectedClient = await resolveSelectedClient(client, clients ?? []);
 
   const { data: recent } = selectedClient

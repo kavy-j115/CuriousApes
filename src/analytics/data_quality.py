@@ -15,18 +15,26 @@ LINE_ITEM_MISMATCH_TOLERANCE = 1.00  # currency units; rounding/manual edits can
 
 
 def check_line_item_totals(conn, client_id: str, since: str) -> list[Alert]:
-    """Flags orders where subtotal_price doesn't match the sum of their own
-    line items (quantity * unit_price) -- a sign the transform step mapped
-    something wrong, or Shopify sent a payload shape we don't handle yet."""
+    """Flags orders whose subtotal doesn't reconcile with their own line items
+    -- a sign the transform step mapped something wrong, or Shopify sent a
+    payload shape we don't handle yet.
+
+    Reconciles subtotal + discounts against line items at original price,
+    because Shopify's subtotal is AFTER discounts while line items are
+    BEFORE them (comparing them directly flags every discounted order). Only
+    intact orders are checked: cancelled/voided orders have their totals
+    zeroed by Shopify, and refunded orders have lower current totals, so
+    both would be expected "mismatches", not data errors."""
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT o.order_number, o.subtotal_price, COALESCE(SUM(li.quantity * li.unit_price), 0) AS line_items_total
+        SELECT o.order_number, o.subtotal_price, o.total_discounts, COALESCE(SUM(li.quantity * li.unit_price), 0) AS line_items_total
         FROM orders o
         LEFT JOIN order_line_items li ON li.order_id = o.id
         WHERE o.client_id = %s AND o.created_at >= %s
-        GROUP BY o.id, o.order_number, o.subtotal_price
-        HAVING ABS(o.subtotal_price - COALESCE(SUM(li.quantity * li.unit_price), 0)) > %s;
+          AND o.total_price > 0 AND o.total_refunded = 0
+        GROUP BY o.id, o.order_number, o.subtotal_price, o.total_discounts
+        HAVING ABS(o.subtotal_price + o.total_discounts - COALESCE(SUM(li.quantity * li.unit_price), 0)) > %s;
         """,
         (client_id, since, LINE_ITEM_MISMATCH_TOLERANCE),
     )
@@ -36,11 +44,14 @@ def check_line_item_totals(conn, client_id: str, since: str) -> list[Alert]:
     if not rows:
         return []
 
-    examples = ", ".join(f"{order_number} (subtotal ${subtotal}, line items ${line_total})" for order_number, subtotal, line_total in rows[:5])
+    examples = ", ".join(
+        f"{order_number} (subtotal {subtotal} + discounts {discounts}, line items {line_total})"
+        for order_number, subtotal, discounts, line_total in rows[:5]
+    )
     return [Alert(
         "data_quality_line_items",
-        f"{len(rows)} order(s) since {since} have a subtotal that doesn't match their line items' total "
-        f"(off by more than ${LINE_ITEM_MISMATCH_TOLERANCE}): {examples}.",
+        f"{len(rows)} order(s) since {since} don't reconcile with their line items "
+        f"(subtotal + discounts off by more than {LINE_ITEM_MISMATCH_TOLERANCE}): {examples}.",
     )]
 
 

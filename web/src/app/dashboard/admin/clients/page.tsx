@@ -13,21 +13,14 @@ export default async function AdminClientsPage() {
   if (!profile) return null;
   assertRole(profile, ["admin"]);
 
-  const [{ data: clients }, { data: clientUsers }, { data: access }] = await Promise.all([
+  const [{ data: clients }, { data: users }, { data: access }] = await Promise.all([
     supabase
       .from("clients")
       .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients, shopify_store_domain, meta_ad_account_id, ga4_property_id, shopify_connected_at, sync_enabled")
       .order("created_at", { ascending: false }),
-    supabase.from("user_profiles").select("id, email, display_name").eq("role", "client"),
-    supabase.from("client_access").select("user_id, client_id").is("expires_at", null),
+    supabase.from("user_profiles").select("id, email, display_name, role").neq("role", "admin").order("display_name"),
+    supabase.from("client_access").select("user_id, client_id, expires_at"),
   ]);
-
-  const assignedUserByClient = new Map<string, string>();
-  for (const row of access ?? []) {
-    if ((clientUsers ?? []).some((u) => u.id === row.user_id)) {
-      assignedUserByClient.set(row.client_id, row.user_id);
-    }
-  }
 
   return (
     <div className="max-w-3xl">
@@ -87,9 +80,9 @@ export default async function AdminClientsPage() {
             <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
               <th className="px-3 py-2">client_id</th>
               <th className="px-3 py-2">Display name</th>
-              <th className="px-3 py-2">Assigned to</th>
-              <th className="px-3 py-2">Report</th>
+                            <th className="px-3 py-2">Report</th>
               <th className="px-3 py-2">Notifications</th>
+              <th className="px-3 py-2">Access</th>
               <th className="px-3 py-2">Connections</th>
               <th className="px-3 py-2">Sync</th>
               <th></th>
@@ -99,14 +92,14 @@ export default async function AdminClientsPage() {
             {(clients ?? []).map((c) => (
               <ClientRow
                 key={c.client_id}
+                users={(users ?? []).map((u) => ({ id: u.id as string, label: (u.display_name || u.email || u.id) as string, role: u.role as string }))}
+                access={(access ?? []).filter((a) => a.client_id === c.client_id).map((a) => ({ user_id: a.user_id as string, expires_at: a.expires_at as string | null }))}
                 client={{
                   ...c,
                   report_config: c.report_config as ReportConfig,
                   alert_thresholds: c.alert_thresholds as { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null,
                   whatsapp_recipients: (c.whatsapp_recipients as string[] | null) ?? [],
                 }}
-                assignedUserId={assignedUserByClient.get(c.client_id) ?? null}
-                assignableUsers={clientUsers ?? []}
               />
             ))}
             {(clients ?? []).length === 0 && (

@@ -30,6 +30,12 @@ export default async function AdminUsersPage() {
     access: accessByUser.get(p.id as string) ?? [],
   }));
 
+  // Other non-admin users who have permanent clients -- the people you can
+  // "collab with" (borrow their client list for 24h).
+  const collabCandidates = users
+    .filter((u) => u.role !== "admin" && u.access.some((a) => !a.expires_at))
+    .map((u) => ({ id: u.id, label: u.display_name || u.email || u.id }));
+
   return (
     <div className="max-w-3xl">
       <h1 className="mb-4 text-xl font-semibold text-zinc-50">Users</h1>
@@ -38,7 +44,7 @@ export default async function AdminUsersPage() {
 
       <div className="flex flex-col gap-3">
         {users.map((u) => (
-          <UserRow key={u.id} user={u} clients={clients ?? []} currentUserId={profile.id} />
+          <UserRow key={u.id} user={u} clients={clients ?? []} collabCandidates={collabCandidates} currentUserId={profile.id} />
         ))}
         {users.length === 0 && <p className="text-sm text-zinc-500">No users yet.</p>}
       </div>

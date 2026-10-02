@@ -13,7 +13,7 @@ API_VERSION = "2024-10"
 
 ORDERS_QUERY = """
 query Orders($cursor: String, $queryFilter: String) {
-  orders(first: 50, after: $cursor, query: $queryFilter, sortKey: UPDATED_AT) {
+  orders(first: 50, after: $cursor, query: $queryFilter, sortKey: CREATED_AT) {
     pageInfo {
       hasNextPage
       endCursor
@@ -83,14 +83,16 @@ def _post(store_domain: str, access_token: str, query: str, variables: dict) -> 
     return body["data"]
 
 
-def fetch_orders(store_domain: str, access_token: str, updated_at_min: str | None = None):
+def fetch_orders(store_domain: str, access_token: str, created_at_min: str | None = None):
     """Yields raw order dicts (one per Shopify order), handling pagination.
 
-    updated_at_min: ISO 8601 timestamp string. When set, only orders updated
-    at or after this time are returned (this is how incremental sync works —
-    unused for now, wired up when we build the daily sync job).
+    created_at_min: a date or ISO 8601 timestamp. When set, only orders CREATED
+    on or after it are returned -- so a run covers exactly the order dates
+    asked for and lines up with what Shopify's own reports show. (This used
+    to filter on updated_at, which pulled in old orders that merely changed
+    recently and left older days only partially filled.)
     """
-    query_filter = f"updated_at:>='{updated_at_min}'" if updated_at_min else None
+    query_filter = f"created_at:>='{created_at_min}'" if created_at_min else None
     cursor = None
 
     while True:

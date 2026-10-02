@@ -39,6 +39,7 @@ from src.analytics.data_quality import run_data_quality_checks
 from src.analytics.anomaly import check_anomalies
 from src.notifications.dispatch import send_pending_alerts
 from src.reports.dhr import generate_and_send_dhr
+from src.reports.summaries import generate_summaries
 
 load_dotenv()
 
@@ -60,7 +61,7 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     shopify_token = resolve_secret(conn, config, "shopify", "access_token_secret")
     if store_domain and shopify_token:
         try:
-            count = sync_shopify_orders(conn, client_id, store_domain, shopify_token, updated_at_min=since)
+            count = sync_shopify_orders(conn, client_id, store_domain, shopify_token, created_at_min=since)
             results.append(StepResult("Shopify sync", "ok", f"{count} orders"))
             try:
                 t_count = transform_orders(conn, client_id)
@@ -136,6 +137,17 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
             results.append(StepResult("Report upload", "skipped", "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set"))
     except Exception as e:
         results.append(StepResult("Report", "error", str(e)))
+
+    # Weekly (last 7 days) / monthly (last 30 days) summary Excel files, refreshed
+    # every run so the Reports page's download buttons are always current.
+    try:
+        summary_status = generate_summaries(
+            conn, client_id, config.get("display_name", client_id), supabase_url, service_role_key,
+            report_columns, roas_thresholds,
+        )
+        results.append(StepResult("Summaries", "skipped" if summary_status[0].startswith("skipped") else "ok", "; ".join(summary_status)))
+    except Exception as e:
+        results.append(StepResult("Summaries", "error", str(e)))
 
     # Data quality checks: structural sanity on the clean layer, unconditional
     # (no per-client config) -- these catch broken ingestion, not business

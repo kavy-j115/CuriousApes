@@ -10,12 +10,12 @@ import psycopg2.extras
 from src.connectors.shopify import fetch_orders
 
 
-def sync_orders(conn, client_id: str, store_domain: str, access_token: str, updated_at_min: str | None = None) -> int:
+def sync_orders(conn, client_id: str, store_domain: str, access_token: str, created_at_min: str | None = None) -> int:
     """Returns the number of orders written."""
     cur = conn.cursor()
     count = 0
 
-    for order in fetch_orders(store_domain, access_token, updated_at_min):
+    for order in fetch_orders(store_domain, access_token, created_at_min):
         shopify_order_id = order["id"]  # Shopify's GraphQL global ID, e.g. "gid://shopify/Order/123"
 
         cur.execute(

@@ -1,17 +1,20 @@
 "use client";
 
-import Select from "../../_components/Select";
 import Checkbox from "../../_components/Checkbox";
+import Select from "../../_components/Select";
+import MultiSelect from "../../_components/MultiSelect";
 import { useState, useTransition } from "react";
 import { Trash2, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import {
   deleteClientRecord,
   updateClientReportConfig,
   updateClientNotifications,
-  reassignClient,
   updateClientConnections,
   setClientSyncEnabled,
   createShopifyInstallLink,
+  setClientUserAccess,
+  grantTemporaryAccess,
+  revokeAccess,
 } from "../actions";
 import { AVAILABLE_METRICS, ALL_METRIC_KEYS, defaultLabel, DEFAULT_ROAS_THRESHOLDS, type MetricKey, type ReportConfig, type DerivedColumn } from "@/lib/reportColumns";
 import { validateFormula } from "@/lib/formulaEval";
@@ -31,16 +34,22 @@ type ClientRowData = {
   shopify_connected_at: string | null;
   sync_enabled: boolean;
 };
-type AssignableUser = { id: string; email: string | null; display_name: string | null };
+
+type AccessUser = { id: string; label: string; role: string };
+type AccessRow = { user_id: string; expires_at: string | null };
+
+function hoursLeft(expiresAt: string): number {
+  return Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 3_600_000));
+}
 
 export default function ClientRow({
   client,
-  assignedUserId,
-  assignableUsers,
+  users,
+  access,
 }: {
   client: ClientRowData;
-  assignedUserId: string | null;
-  assignableUsers: AssignableUser[];
+  users: AccessUser[];
+  access: AccessRow[];
 }) {
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [useDefault, setUseDefault] = useState(!client.report_config);
@@ -62,6 +71,14 @@ export default function ClientRow({
   const [cacPct, setCacPct] = useState(String(client.alert_thresholds?.cac_change_pct ?? ""));
   const [roasPct, setRoasPct] = useState(String(client.alert_thresholds?.roas_change_pct ?? ""));
   const [recipients, setRecipients] = useState((client.whatsapp_recipients ?? []).join(", "));
+  const [accessOpen, setAccessOpen] = useState(false);
+  const permanentUserIds = access.filter((a) => !a.expires_at).map((a) => a.user_id);
+  const temporaryAccess = access.filter((a) => a.expires_at);
+  const [accessSelected, setAccessSelected] = useState<string[]>(permanentUserIds);
+  const [collabUserId, setCollabUserId] = useState("");
+  const userLabel = (id: string) => users.find((u) => u.id === id)?.label ?? id;
+  const accessDirty = accessSelected.length !== permanentUserIds.length || permanentUserIds.some((id) => !accessSelected.includes(id));
+  const collabCandidates = users.filter((u) => !access.some((a) => a.user_id === u.id));
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [storeDomain, setStoreDomain] = useState(client.shopify_store_domain ?? "");
   const [metaAccount, setMetaAccount] = useState(client.meta_ad_account_id ?? "");
@@ -144,6 +161,26 @@ export default function ClientRow({
     });
   }
 
+  function saveAccess() {
+    startTransition(async () => {
+      await setClientUserAccess(client.client_id, accessSelected);
+    });
+  }
+
+  function grantCollab() {
+    if (!collabUserId) return;
+    startTransition(async () => {
+      await grantTemporaryAccess(collabUserId, client.client_id);
+      setCollabUserId("");
+    });
+  }
+
+  function revokeCollab(userId: string) {
+    startTransition(async () => {
+      await revokeAccess(userId, client.client_id);
+    });
+  }
+
   function saveConnections() {
     setConnectionError(null);
     setInstallLink(null);
@@ -182,12 +219,6 @@ export default function ClientRow({
     });
   }
 
-  function handleReassign(newUserId: string) {
-    startTransition(async () => {
-      await reassignClient(client.client_id, newUserId || null);
-    });
-  }
-
   function saveNotifications() {
     startTransition(async () => {
       const thresholds: AlertThresholds = {};
@@ -211,16 +242,6 @@ export default function ClientRow({
         <td className="px-3 py-1.5 font-mono text-xs">{client.client_id}</td>
         <td className="px-3 py-1.5">{client.display_name}</td>
         <td className="px-3 py-1.5">
-          <span className={pending ? "pointer-events-none opacity-50" : ""}>
-            <Select value={assignedUserId ?? ""} onChange={handleReassign} className="min-w-44">
-              <option value="">Unassigned</option>
-              {assignableUsers.map((u) => (
-                <option key={u.id} value={u.id}>{u.display_name || u.email}</option>
-              ))}
-            </Select>
-          </span>
-        </td>
-        <td className="px-3 py-1.5">
           <button onClick={() => setColumnsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
             {columnsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} columns
           </button>
@@ -228,6 +249,11 @@ export default function ClientRow({
         <td className="px-3 py-1.5">
           <button onClick={() => setNotificationsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
             {notificationsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} alerts/WhatsApp
+          </button>
+        </td>
+        <td className="px-3 py-1.5">
+          <button onClick={() => setAccessOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
+            {accessOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {access.length} {access.length === 1 ? "user" : "users"}
           </button>
         </td>
         <td className="px-3 py-1.5">
@@ -328,6 +354,54 @@ export default function ClientRow({
             <button onClick={saveColumns} disabled={pending} className="mt-3 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               {pending ? "Saving…" : "Save columns"}
             </button>
+          </td>
+        </tr>
+      )}
+      {accessOpen && (
+        <tr className="border-b border-zinc-900">
+          <td colSpan={8} className="bg-black px-3 py-3">
+            <p className="mb-1.5 text-xs font-medium text-zinc-400">Users with access</p>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <MultiSelect
+                placeholder="No users"
+                options={users.map((u) => ({ id: u.id, label: u.label, hint: u.role }))}
+                selected={accessSelected}
+                onChange={setAccessSelected}
+              />
+              <button onClick={saveAccess} disabled={!accessDirty || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                {pending ? "Saving…" : "Save"}
+              </button>
+            </div>
+
+            <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h)</p>
+            <div className="flex flex-col gap-1.5">
+              {temporaryAccess.map((t) => {
+                const hours = hoursLeft(t.expires_at!);
+                return (
+                  <div key={t.user_id} className="flex items-center gap-2 text-xs text-zinc-300">
+                    <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
+                      {userLabel(t.user_id)} -- {hours > 0 ? `${hours}h left` : "expired"}
+                    </span>
+                    <button onClick={() => revokeCollab(t.user_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
+                      revoke
+                    </button>
+                  </div>
+                );
+              })}
+              {collabCandidates.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={collabUserId} onChange={setCollabUserId}>
+                    <option value="">Give a user 24h access…</option>
+                    {collabCandidates.map((u) => (
+                      <option key={u.id} value={u.id}>{u.label}</option>
+                    ))}
+                  </Select>
+                  <button onClick={grantCollab} disabled={!collabUserId || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                    Grant
+                  </button>
+                </div>
+              )}
+            </div>
           </td>
         </tr>
       )}

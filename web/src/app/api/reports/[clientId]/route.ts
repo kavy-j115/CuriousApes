@@ -38,9 +38,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ clie
     );
   }
 
-  const filename = `${clientId}_business_health_report.xlsx`;
+  // daily = the full report the pipeline writes each run; weekly/monthly are
+  // the last-7-day / last-30-day summaries it writes alongside it
+  // (src/reports/summaries.py). Whitelisted -- never a caller-built path.
+  const type = new URL(request.url).searchParams.get("type") ?? "daily";
+  const files: Record<string, { path: string; name: string }> = {
+    daily: { path: `${clientId}/${clientId}_business_health_report.xlsx`, name: `${clientId}_business_health_report.xlsx` },
+    weekly: { path: `${clientId}/summary/weekly.xlsx`, name: `${clientId}_weekly_report.xlsx` },
+    monthly: { path: `${clientId}/summary/monthly.xlsx`, name: `${clientId}_monthly_report.xlsx` },
+  };
+  const file = files[type];
+  if (!file) {
+    return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
+  }
+  const filename = file.name;
   const storageResponse = await fetch(
-    `${supabaseUrl}/storage/v1/object/reports/${clientId}/${filename}`,
+    `${supabaseUrl}/storage/v1/object/reports/${file.path}`,
     {
       headers: {
         Authorization: `Bearer ${serviceRoleKey}`,

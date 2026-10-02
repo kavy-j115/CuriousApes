@@ -28,10 +28,12 @@ const AXIS_PROPS = { fontSize: 11, stroke: "#52525b", tickLine: false, axisLine:
 const TOOLTIP_STYLE = { background: "#18181b", border: "1px solid #27272a", borderRadius: 8, fontSize: 12 };
 
 export default function MetricsCharts({ data }: { data: ChartRow[] }) {
-  // Charts read oldest -> newest, left to right; the report table stays
-  // newest-first since that's more useful for a quick daily check.
+  // Charts read oldest -> newest, left to right. Sorted by date here rather
+  // than relying on whichever order each caller happens to pass rows in
+  // (the report table is newest-first, comparisons differ again) -- reversing
+  // blindly drew time backwards whenever a caller had already reversed.
   const chartData = [...data]
-    .reverse()
+    .sort((a, b) => (a.report_date < b.report_date ? -1 : a.report_date > b.report_date ? 1 : 0))
     .map((row) => ({
       date: row.report_date,
       revenue: Number(row.gross_revenue),

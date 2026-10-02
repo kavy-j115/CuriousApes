@@ -16,6 +16,9 @@ export type ReportRow = {
   checkout_pct: string | null;
   mtd_sale: string;
   lmtd_sale: string | null;
+  total_discounts: string | null;
+  total_refunded: string | null;
+  total_sales: string | null;
 };
 
 export function fmtNum(v: number | string | null): string {
@@ -48,6 +51,9 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
   const netRevenue = sum((r) => r.net_revenue);
   const amountSpent = sum((r) => r.amount_spent);
   const purchaseValue = sum((r) => r.purchase_value);
+  const totalDiscounts = sum((r) => r.total_discounts);
+  const totalRefunded = sum((r) => r.total_refunded);
+  const totalSales = sum((r) => r.total_sales);
 
   const ratio = (numerator: number | null, denominator: number | null) =>
     numerator !== null && denominator ? numerator / denominator : null;
@@ -61,7 +67,7 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
     order_count: orderCount,
     gross_revenue: String(grossRevenue),
     net_revenue: netRevenue === null ? "0" : String(netRevenue),
-    aov: String(ratio(grossRevenue, orderCount) ?? 0),
+    aov: String(ratio(totalSales, orderCount) ?? 0),
     amount_spent: amountSpent === null ? null : String(amountSpent),
     purchase_value: purchaseValue === null ? null : String(purchaseValue),
     proas: ratio(purchaseValue, amountSpent) as unknown as string,
@@ -72,5 +78,8 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
     // the most recent row's value is the meaningful one for a range total.
     mtd_sale: rows[0]?.mtd_sale ?? "0",
     lmtd_sale: rows[0]?.lmtd_sale ?? null,
+    total_discounts: totalDiscounts === null ? null : String(totalDiscounts),
+    total_refunded: totalRefunded === null ? null : String(totalRefunded),
+    total_sales: totalSales === null ? null : String(totalSales),
   };
 }

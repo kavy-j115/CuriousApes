@@ -45,11 +45,12 @@ COLUMNS = [
 # formula relative to the summed columns (AOV, PROAS, and the % columns
 # are ratios -- summing them directly would be meaningless).
 SUM_COLUMNS = {"sessions", "add_to_carts", "order_count", "gross_revenue", "net_revenue",
-                "amount_spent", "purchase_value", "mtd_sale", "lmtd_sale"}
+                "amount_spent", "purchase_value", "mtd_sale", "lmtd_sale",
+                "total_sales", "total_discounts", "total_refunded"}
 
 # Each ratio column's Total-row formula and the two columns it divides.
 RATIO_FORMULAS = {
-    "aov": ("gross_revenue", "order_count"),
+    "aov": ("total_sales", "order_count"),
     "proas": ("purchase_value", "amount_spent"),
     "atc_pct": ("add_to_carts", "sessions"),
     "conversion_pct": ("order_count", "sessions"),
