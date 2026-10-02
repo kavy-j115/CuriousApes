@@ -67,7 +67,7 @@ export default function CompareView({
                 <td className="px-3 py-1.5 font-medium text-zinc-100">{m.label}</td>
                 <td className="px-3 py-1.5">{fmt(a)}</td>
                 <td className="px-3 py-1.5">{fmt(b)}</td>
-                <td className={`px-3 py-1.5 ${delta !== null && delta > 0 ? "text-lime-400" : delta !== null && delta < 0 ? "text-red-400" : ""}`}>
+                <td className={`px-3 py-1.5 ${delta !== null && delta > 0 ? "text-status-good" : delta !== null && delta < 0 ? "text-status-bad" : ""}`}>
                   {delta === null ? "—" : m.isPct ? fmtPct(delta) : fmtNum(delta)}
                 </td>
                 <td className="px-3 py-1.5">{deltaPct(a, b)}</td>

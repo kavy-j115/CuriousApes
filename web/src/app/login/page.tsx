@@ -9,7 +9,7 @@ export default function LoginSelectorPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-black p-8 font-sans">
       <div className="w-full max-w-sm">
-        <p className="mb-1 text-sm font-medium tracking-wide text-lime-400">CURIOUS APES</p>
+        <p className="mb-1 text-sm font-medium tracking-wide text-accent">CURIOUS APES</p>
         <h1 className="mb-2 text-3xl font-semibold text-zinc-50">Welcome back.</h1>
         <p className="mb-8 text-sm text-zinc-400">Choose your account type to continue.</p>
 

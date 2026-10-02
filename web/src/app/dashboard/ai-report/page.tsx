@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { resolveSelectedClient } from "@/lib/selectedClient";
 import DateSelector from "./DateSelector";
 
 export default async function AiReportPage({
@@ -10,7 +11,7 @@ export default async function AiReportPage({
   const supabase = await createClient();
 
   const { data: clients } = await supabase.from("clients").select("client_id, display_name").order("display_name");
-  const selectedClient = client ?? clients?.[0]?.client_id ?? "";
+  const selectedClient = await resolveSelectedClient(client, clients ?? []);
 
   const { data: recent } = selectedClient
     ? await supabase
@@ -37,7 +38,6 @@ export default async function AiReportPage({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-50">AI Daily Report</h1>
-          <p className="text-xs text-zinc-500">AI-generated plain-language read of the day&apos;s numbers.</p>
         </div>
         <DateSelector dates={(recent ?? []).map((r) => r.report_date)} />
       </div>

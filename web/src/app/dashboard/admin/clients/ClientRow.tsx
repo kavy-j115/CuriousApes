@@ -1,5 +1,7 @@
 "use client";
 
+import Select from "../../_components/Select";
+import Checkbox from "../../_components/Checkbox";
 import { useState, useTransition } from "react";
 import { Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { deleteClientRecord, updateClientReportConfig, updateClientNotifications, reassignClient } from "../actions";
@@ -151,30 +153,27 @@ export default function ClientRow({
         <td className="px-3 py-1.5 font-mono text-xs">{client.client_id}</td>
         <td className="px-3 py-1.5">{client.display_name}</td>
         <td className="px-3 py-1.5">
-          <select
-            value={assignedUserId ?? ""}
-            onChange={(e) => handleReassign(e.target.value)}
-            disabled={pending}
-            className="rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1 text-xs text-zinc-300"
-          >
-            <option value="">— unassigned —</option>
-            {assignableUsers.map((u) => (
-              <option key={u.id} value={u.id}>{u.display_name || u.email}</option>
-            ))}
-          </select>
+          <span className={pending ? "pointer-events-none opacity-50" : ""}>
+            <Select value={assignedUserId ?? ""} onChange={handleReassign} className="min-w-44">
+              <option value="">Unassigned</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>{u.display_name || u.email}</option>
+              ))}
+            </Select>
+          </span>
         </td>
         <td className="px-3 py-1.5">
-          <button onClick={() => setColumnsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-sky-400 hover:underline">
+          <button onClick={() => setColumnsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
             {columnsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} columns
           </button>
         </td>
         <td className="px-3 py-1.5">
-          <button onClick={() => setNotificationsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-sky-400 hover:underline">
+          <button onClick={() => setNotificationsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
             {notificationsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} alerts/WhatsApp
           </button>
         </td>
         <td className="px-3 py-1.5 text-right">
-          <button onClick={handleDelete} disabled={pending} aria-label="Delete client" className="rounded p-1.5 text-zinc-500 hover:bg-red-950/40 hover:text-red-400">
+          <button onClick={handleDelete} disabled={pending} aria-label="Delete client" className="rounded p-1.5 text-zinc-500 hover:bg-status-bad/10 hover:text-status-bad">
             <Trash2 size={14} />
           </button>
         </td>
@@ -182,14 +181,11 @@ export default function ClientRow({
       {columnsOpen && (
         <tr className="border-b border-zinc-900">
           <td colSpan={6} className="bg-black px-3 py-3">
-            {deleteError && <p className="mb-2 text-xs text-red-400">{deleteError}</p>}
-            <label className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
-              <input type="checkbox" checked={useDefault} onChange={(e) => setUseDefault(e.target.checked)} />
-              Use default report configuration
-            </label>
+            {deleteError && <p className="mb-2 text-xs text-status-bad">{deleteError}</p>}
+            <Checkbox className="mb-3" checked={useDefault} onChange={setUseDefault} label="Use default report configuration" />
 
             <div className="mb-3 flex items-center gap-2 text-xs text-zinc-300">
-              <span className="text-zinc-400">PROAS colors: green at or above</span>
+              <span className="text-zinc-400">PROAS good ≥</span>
               <input
                 type="number"
                 step="0.1"
@@ -197,7 +193,7 @@ export default function ClientRow({
                 onChange={(e) => setGoodThreshold(e.target.value)}
                 className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100"
               />
-              <span className="text-zinc-400">red below</span>
+              <span className="text-zinc-400">danger &lt;</span>
               <input
                 type="number"
                 step="0.1"
@@ -205,17 +201,13 @@ export default function ClientRow({
                 onChange={(e) => setDangerThreshold(e.target.value)}
                 className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100"
               />
-              <span className="text-zinc-400">orange between</span>
             </div>
 
             {!useDefault && (
               <div className="flex flex-col gap-1.5">
                 {AVAILABLE_METRICS.map((m) => (
                   <div key={m.key} className="flex items-center gap-2">
-                    <label className="flex w-48 items-center gap-1.5 text-xs text-zinc-300">
-                      <input type="checkbox" checked={enabled.has(m.key)} onChange={() => toggleMetric(m.key)} />
-                      {m.key}
-                    </label>
+                    <Checkbox className="w-48" checked={enabled.has(m.key)} onChange={() => toggleMetric(m.key)} label={m.key} />
                     <input
                       type="text"
                       disabled={!enabled.has(m.key)}
@@ -231,9 +223,7 @@ export default function ClientRow({
 
             <div className="mt-4 border-t border-zinc-900 pt-3">
               <p className="mb-1.5 text-xs font-medium text-zinc-300">Extra computed columns</p>
-              <p className="mb-2 text-xs text-zinc-500">
-                A formula over: {ALL_METRIC_KEYS.join(", ")} (+ -  * /  and parentheses).
-              </p>
+              <p className="mb-2 text-xs text-zinc-500">{ALL_METRIC_KEYS.join(", ")}</p>
               <div className="flex flex-col gap-2">
                 {derivedColumns.map((dc, i) => {
                   const error = formulaError(i);
@@ -251,26 +241,23 @@ export default function ClientRow({
                         placeholder="e.g. purchase_value / amount_spent"
                         value={dc.formula}
                         onChange={(e) => updateDerivedColumn(i, { formula: e.target.value })}
-                        className={`flex-1 min-w-48 rounded border bg-zinc-950 px-2 py-1 text-xs text-zinc-100 ${error ? "border-red-700" : "border-zinc-800"}`}
+                        className={`flex-1 min-w-48 rounded border bg-zinc-950 px-2 py-1 text-xs text-zinc-100 ${error ? "border-status-bad" : "border-zinc-800"}`}
                       />
-                      <label className="flex items-center gap-1 text-xs text-zinc-400">
-                        <input type="checkbox" checked={dc.isPct} onChange={(e) => updateDerivedColumn(i, { isPct: e.target.checked })} />
-                        %
-                      </label>
-                      <button onClick={() => removeDerivedColumn(i)} className="text-xs text-zinc-500 hover:text-red-400">
+                      <Checkbox checked={dc.isPct} onChange={(v) => updateDerivedColumn(i, { isPct: v })} label="%" />
+                      <button onClick={() => removeDerivedColumn(i)} className="text-xs text-zinc-500 hover:text-status-bad">
                         remove
                       </button>
-                      {error && <p className="w-full text-xs text-red-400">{error}</p>}
+                      {error && <p className="w-full text-xs text-status-bad">{error}</p>}
                     </div>
                   );
                 })}
               </div>
-              <button onClick={addDerivedColumn} className="mt-2 text-xs text-sky-400 hover:underline">
+              <button onClick={addDerivedColumn} className="mt-2 text-xs text-accent hover:underline">
                 + Add computed column
               </button>
             </div>
 
-            <button onClick={saveColumns} disabled={pending} className="mt-3 rounded bg-sky-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+            <button onClick={saveColumns} disabled={pending} className="mt-3 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               {pending ? "Saving…" : "Save columns"}
             </button>
           </td>
@@ -279,7 +266,7 @@ export default function ClientRow({
       {notificationsOpen && (
         <tr className="border-b border-zinc-900">
           <td colSpan={6} className="bg-black px-3 py-3">
-            <p className="mb-2 text-xs font-medium text-zinc-300">Alert thresholds (% change that triggers an alert)</p>
+            <p className="mb-2 text-xs font-medium text-zinc-300">Alert thresholds</p>
             <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-zinc-300">
               <label className="flex items-center gap-1.5">
                 Revenue drop
@@ -294,7 +281,7 @@ export default function ClientRow({
                 <input type="number" step="1" value={roasPct} onChange={(e) => setRoasPct(e.target.value)} placeholder="off" className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100" />%
               </label>
             </div>
-            <p className="mb-1 text-xs font-medium text-zinc-300">WhatsApp recipients (alerts + DHR)</p>
+            <p className="mb-1 text-xs font-medium text-zinc-300">WhatsApp recipients</p>
             <input
               type="text"
               value={recipients}
@@ -302,8 +289,7 @@ export default function ClientRow({
               placeholder="+919876543210, +919876543211"
               className="mb-3 w-full max-w-md rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100"
             />
-            <p className="mb-3 text-xs text-zinc-500">Comma-separated E.164 numbers. A blank threshold means that alert is off.</p>
-            <button onClick={saveNotifications} disabled={pending} className="rounded bg-sky-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+            <button onClick={saveNotifications} disabled={pending} className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               {pending ? "Saving…" : "Save"}
             </button>
           </td>

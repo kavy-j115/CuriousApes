@@ -1,5 +1,6 @@
 "use client";
 
+import Select from "../_components/Select";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 export default function DateSelector({ dates }: { dates: string[] }) {
@@ -17,14 +18,10 @@ export default function DateSelector({ dates }: { dates: string[] }) {
   if (dates.length === 0) return null;
 
   return (
-    <select
-      value={selected}
-      onChange={(e) => handleChange(e.target.value)}
-      className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-200"
-    >
+    <Select value={selected} onChange={handleChange}>
       {dates.map((d) => (
         <option key={d} value={d}>{d}</option>
       ))}
-    </select>
+    </Select>
   );
 }

@@ -15,10 +15,12 @@ type Client = { client_id: string; display_name: string };
 export default function DashboardShell({
   profile,
   clients,
+  initialSelectedClient,
   children,
 }: {
   profile: Profile;
   clients: Client[];
+  initialSelectedClient: string;
   children: React.ReactNode;
 }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -57,7 +59,7 @@ export default function DashboardShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar profile={profile} clients={clients}>
+        <TopBar profile={profile} clients={clients} initialSelectedClient={initialSelectedClient}>
           <button
             onClick={() => setNavOpen(true)}
             aria-label="Open menu"

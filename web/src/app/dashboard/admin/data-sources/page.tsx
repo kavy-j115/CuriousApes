@@ -16,7 +16,7 @@ function isStale(lastSynced: string, now: number): boolean {
 function StatusCell({ lastSynced, now }: { lastSynced: string | undefined; now: number }) {
   if (!lastSynced) return <span className="text-zinc-600">never synced</span>;
   return (
-    <span className={isStale(lastSynced, now) ? "text-amber-400" : "text-lime-400"}>
+    <span className={isStale(lastSynced, now) ? "text-status-warning" : "text-status-good"}>
       {new Date(lastSynced).toLocaleString()}
     </span>
   );
@@ -46,14 +46,7 @@ export default async function AdminDataSourcesPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-1 text-xl font-semibold text-zinc-50">Data Sources</h1>
-      <p className="mb-6 text-sm text-zinc-500">
-        Last time raw data actually landed for each client/source (`fetched_at` on the raw_*
-        tables) -- not whether credentials exist in config, since that lives outside the
-        database (see docs/secrets.md). A source that&apos;s configured but failing shows up here
-        as stale or never-synced, same as one that was never set up.
-      </p>
-
+      <h1 className="mb-6 text-xl font-semibold text-zinc-50">Data Sources</h1>
       <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
         <table className="w-full border-collapse text-sm">
           <thead>

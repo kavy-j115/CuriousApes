@@ -5,7 +5,7 @@ import ClientRow from "./ClientRow";
 import type { ReportConfig } from "@/lib/reportColumns";
 
 const inputClass =
-  "rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-sky-500 focus:outline-none";
+  "rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-accent focus:outline-none";
 
 export default async function AdminClientsPage() {
   const supabase = await createClient();
@@ -62,7 +62,7 @@ export default async function AdminClientsPage() {
             <input name="whatsapp_recipients" placeholder="+919876543210, +919876543211" className={inputClass} />
           </div>
         </div>
-        <button type="submit" className="self-start rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-white">
+        <button type="submit" className="self-start rounded-md bg-accent px-4 py-2 text-sm font-medium text-white">
           Add client
         </button>
       </form>

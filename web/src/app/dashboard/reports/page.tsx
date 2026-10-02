@@ -1,5 +1,6 @@
 import { Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { resolveSelectedClient } from "@/lib/selectedClient";
 import { ReportRow, computeTotal } from "@/lib/reportMath";
 import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
 import ReportDateControls from "../_components/ReportDateControls";
@@ -18,7 +19,7 @@ export default async function ReportsPage({
 
   const supabase = await createClient();
   const { data: clients } = await supabase.from("clients").select("client_id, display_name, report_config").order("display_name");
-  const selectedClient = client ?? clients?.[0]?.client_id ?? "";
+  const selectedClient = await resolveSelectedClient(client, clients ?? []);
   const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
   const reportColumns = resolveReportColumns(reportConfig);
 
@@ -71,7 +72,7 @@ export default async function ReportsPage({
               href={`/api/reports/${selectedClient}`}
               aria-label="Download Excel Report"
               title="Download Excel Report"
-              className="flex items-center justify-center rounded-md border border-zinc-800 p-2 text-sky-400 hover:bg-zinc-900"
+              className="flex items-center justify-center rounded-md border border-zinc-800 p-2 text-accent hover:bg-zinc-900"
             >
               <Download size={16} />
             </a>

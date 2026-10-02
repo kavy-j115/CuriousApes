@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { ArrowRight, DollarSign, Users, ShoppingCart, Receipt, Repeat, UserPlus, UserCheck, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { resolveSelectedClient } from "@/lib/selectedClient";
 import { computeTotal, ReportRow, fmtNum } from "@/lib/reportMath";
 import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
 import StatTile from "./_components/StatTile";
@@ -29,7 +31,7 @@ export default async function DashboardHomePage({
     .select("client_id, display_name, report_config")
     .order("display_name");
 
-  const selectedClient = client ?? clients?.[0]?.client_id ?? "";
+  const selectedClient = await resolveSelectedClient(client, clients ?? []);
   const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
   const reportColumns = resolveReportColumns(reportConfig);
 
@@ -83,32 +85,27 @@ export default async function DashboardHomePage({
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-zinc-50">Dashboard</h1>
-        <p className="text-sm text-zinc-500">Here&apos;s an overview of your brand&apos;s performance.</p>
-      </div>
+      <h1 className="mb-6 text-xl font-semibold text-zinc-50">Dashboard</h1>
 
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <StatTile label="Revenue" value={fmtNum(revenue)} deltaPct={pctChange(revenue, prevRevenue)} />
+        <StatTile icon={DollarSign} label="Revenue" value={fmtNum(revenue)} deltaPct={pctChange(revenue, prevRevenue)} />
+        <StatTile icon={Users} label="Customers" value={fmtNum(totalCustomers)} deltaPct={null} />
         <StatTile
-          label="Customers"
-          value={fmtNum(totalCustomers)}
-          deltaPct={null}
-        />
-        <StatTile
+          icon={ShoppingCart}
           label="Orders"
           value={fmtNum(current.order_count)}
           deltaPct={pctChange(current.order_count, previous.order_count)}
         />
-        <StatTile label="AOV" value={fmtNum(aov)} deltaPct={pctChange(aov, prevAov)} />
+        <StatTile icon={Receipt} label="AOV" value={fmtNum(aov)} deltaPct={pctChange(aov, prevAov)} />
         <StatTile
+          icon={TrendingUp}
           label="Retention Rate"
           value={avgRetention !== null ? `${(avgRetention * 100).toFixed(1)}%` : "—"}
           deltaPct={null}
         />
-        <StatTile label="Repeat Customers" value={fmtNum(repeatCustomers)} deltaPct={null} />
-        <StatTile label="New Customers (30d)" value={fmtNum(newCustomers30d)} deltaPct={null} />
-        <StatTile label="Returning Customers (30d)" value={fmtNum(returningCustomers30d)} deltaPct={null} />
+        <StatTile icon={Repeat} label="Repeat Customers" value={fmtNum(repeatCustomers)} deltaPct={null} />
+        <StatTile icon={UserPlus} label="New Customers (30d)" value={fmtNum(newCustomers30d)} deltaPct={null} />
+        <StatTile icon={UserCheck} label="Returning Customers (30d)" value={fmtNum(returningCustomers30d)} deltaPct={null} />
       </div>
 
       {currentRows.length > 0 ? (
@@ -122,9 +119,10 @@ export default async function DashboardHomePage({
           <h2 className="text-base font-semibold text-zinc-50">Daily Reports</h2>
           <Link
             href={`/dashboard/reports${selectedClient ? `?client=${selectedClient}` : ""}`}
-            className="text-sm text-sky-400 hover:underline"
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:border-accent hover:text-accent"
           >
-            View full reports →
+            View full reports
+            <ArrowRight size={14} />
           </Link>
         </div>
 

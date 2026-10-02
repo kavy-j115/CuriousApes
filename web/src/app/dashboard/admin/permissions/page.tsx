@@ -25,11 +25,7 @@ export default async function AdminPermissionsPage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="mb-1 text-xl font-semibold text-zinc-50">Permissions</h1>
-      <p className="mb-6 text-sm text-zinc-500">
-        Read-only overview of who has access to what. To change something, use Users.
-      </p>
-
+      <h1 className="mb-6 text-xl font-semibold text-zinc-50">Permissions</h1>
       <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
         <table className="w-full border-collapse text-sm">
           <thead>

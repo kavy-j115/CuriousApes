@@ -57,7 +57,7 @@ export default function ReportDateControls() {
             }}
             className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
               activePreset === p.label && !customOpen
-                ? "bg-sky-500 text-white"
+                ? "bg-accent text-white"
                 : "text-zinc-400 hover:text-zinc-100"
             }`}
           >
@@ -68,7 +68,7 @@ export default function ReportDateControls() {
           onClick={() => setCustomOpen((v) => !v)}
           className={`flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium transition-colors ${
             customOpen || (from && !activePreset)
-              ? "bg-sky-500 text-white"
+              ? "bg-accent text-white"
               : "text-zinc-400 hover:text-zinc-100"
           }`}
         >

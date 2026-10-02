@@ -1,4 +1,5 @@
 "use client";
+import Select from "../_components/Select";
 
 export type FieldType = "number" | "date" | "text";
 export type FieldDef = { key: string; label: string; type: FieldType };
@@ -23,7 +24,7 @@ const OPERATORS_BY_TYPE: Record<FieldType, { value: Operator; label: string }[]>
 };
 
 const inputClass =
-  "rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 focus:border-sky-500 focus:outline-none";
+  "rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 focus:border-accent focus:outline-none";
 
 // Lets someone build their own "field [is at least] [value]" filters
 // instead of being limited to whatever fixed filters we thought to add --
@@ -65,33 +66,32 @@ export default function ConditionBuilder({
         const type = fieldType(c.field);
         return (
           <div key={i} className="flex flex-wrap items-center gap-2">
-            <select
+            <Select
               value={c.field}
-              onChange={(e) => update(i, { field: e.target.value, operator: OPERATORS_BY_TYPE[fieldType(e.target.value)][0].value })}
-              className={inputClass}
+              onChange={(v) => update(i, { field: v, operator: OPERATORS_BY_TYPE[fieldType(v)][0].value })}
             >
               {fields.map((f) => (
                 <option key={f.key} value={f.key}>{f.label}</option>
               ))}
-            </select>
-            <select value={c.operator} onChange={(e) => update(i, { operator: e.target.value as Operator })} className={inputClass}>
+            </Select>
+            <Select value={c.operator} onChange={(v) => update(i, { operator: v as Operator })}>
               {OPERATORS_BY_TYPE[type].map((op) => (
                 <option key={op.value} value={op.value}>{op.label}</option>
               ))}
-            </select>
+            </Select>
             <input
               type={type === "date" ? "date" : type === "number" ? "number" : "text"}
               value={c.value}
               onChange={(e) => update(i, { value: e.target.value })}
               className={inputClass}
             />
-            <button onClick={() => remove(i)} className="text-xs text-zinc-500 hover:text-red-400">
+            <button onClick={() => remove(i)} className="text-xs text-zinc-500 hover:text-status-bad">
               remove
             </button>
           </div>
         );
       })}
-      <button onClick={add} className="self-start text-sm text-sky-400 hover:underline">
+      <button onClick={add} className="self-start text-sm text-accent hover:underline">
         + Add condition
       </button>
     </div>

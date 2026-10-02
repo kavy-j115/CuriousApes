@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { resolveSelectedClient } from "@/lib/selectedClient";
 import { ReportRow } from "@/lib/reportMath";
 import { resolveReportColumns, attachDerivedColumns, type ReportConfig } from "@/lib/reportColumns";
 import CompareDateControls from "../_components/CompareDateControls";
@@ -44,7 +45,7 @@ export default async function ComparisonsPage({
 
   const supabase = await createClient();
   const { data: clients } = await supabase.from("clients").select("client_id, display_name, report_config").order("display_name");
-  const selectedClient = client ?? clients?.[0]?.client_id ?? "";
+  const selectedClient = await resolveSelectedClient(client, clients ?? []);
   const reportConfig: ReportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
 
   let rowsA: ReportRow[] = [];

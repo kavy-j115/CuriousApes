@@ -38,7 +38,7 @@ export default function CompareDateControls() {
 
   if (!hasStarted) {
     const bigInput =
-      "rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 focus:border-sky-500 focus:outline-none";
+      "rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 focus:border-accent focus:outline-none";
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
         <h2 className="mb-8 text-lg font-semibold text-zinc-50">Compare two periods</h2>
@@ -65,7 +65,7 @@ export default function CompareDateControls() {
   }
 
   const inputClass =
-    "rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1 text-xs text-zinc-200 focus:border-sky-500 focus:outline-none";
+    "rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1 text-xs text-zinc-200 focus:border-accent focus:outline-none";
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">

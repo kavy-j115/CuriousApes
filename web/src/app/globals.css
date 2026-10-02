@@ -3,11 +3,34 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* The app's one deliberate accent color -- primary actions, links, active
+     nav state, focus rings, and the primary chart series. Everything else
+     uses the zinc/black neutral base. A fixed, small semantic triad covers
+     status instead of scattering arbitrary Tailwind color families (the old
+     palette used 7: zinc, red, sky, lime, amber, purple, orange).
+     --accent and --chart-2 are validated as a categorical pair against this
+     app's dark surface (#09090b) via the dataviz skill's validator -- both
+     sit in the OKLCH L 0.48-0.67 dark band, CVD deltaE 13.0, normal-vision
+     deltaE 17.0 (node scripts/validate_palette.js "#6366f1,#0891b2" --mode
+     dark --surface "#09090b" -- all checks pass). */
+  --accent: #6366f1;
+  --accent-foreground: #eef2ff;
+  --chart-2: #0891b2;
+  --status-good: #34d399;
+  --status-warning: #fbbf24;
+  --status-bad: #f87171;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-chart-2: var(--chart-2);
+  --color-status-good: var(--status-good);
+  --color-status-warning: var(--status-warning);
+  --color-status-bad: var(--status-bad);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -19,17 +42,10 @@
   }
 }
 
-html {
-  /* Bumps every Tailwind rem-based text/spacing utility up proportionally
-     (text-sm, text-xs, etc. are all rem-based) -- one lever for "the whole
-     UI reads too small" instead of hunting down every text-* class. */
-  font-size: 18px;
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Replaces the default chunky browser scrollbar on wide tables (Reports,

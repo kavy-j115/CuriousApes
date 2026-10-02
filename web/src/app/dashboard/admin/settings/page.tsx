@@ -108,14 +108,9 @@ export default async function AdminSettingsPage() {
         </div>
       </div>
 
-      <p className="mb-2 text-sm font-semibold text-zinc-200">WhatsApp sender (Twilio)</p>
-      <p className="mb-4 text-xs text-zinc-500">
-        Agency-wide, read-only here -- lives in config/whatsapp.yaml with the Python pipeline
-        (see docs/notifications.md). Per-client thresholds and recipients are set above, per client.
-      </p>
-
+      <p className="mb-3 text-sm font-semibold text-zinc-200">WhatsApp sender</p>
       {readError && (
-        <p className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
+        <p className="rounded border border-status-bad/30 bg-status-bad/10 p-3 text-sm text-status-bad">
           Couldn&apos;t read config/whatsapp.yaml: {readError}
         </p>
       )}

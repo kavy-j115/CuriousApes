@@ -71,11 +71,11 @@ export default function ProductsClient() {
           type="file"
           accept=".csv"
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-          className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-sky-500 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
+          className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
         />
         {fileName && <p className="text-xs text-zinc-500">{fileName}</p>}
       </div>
-      {fileWarning && <p className="mb-4 text-xs text-amber-400">{fileWarning}</p>}
+      {fileWarning && <p className="mb-4 text-xs text-status-warning">{fileWarning}</p>}
 
       {stats && (
         <>
@@ -85,12 +85,12 @@ export default function ProductsClient() {
               <button
                 key={key}
                 onClick={() => setSortKey(key)}
-                className={`rounded-full px-3 py-1 text-xs font-medium ${sortKey === key ? "bg-sky-500 text-white" : "bg-zinc-900 text-zinc-400"}`}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${sortKey === key ? "bg-accent text-white" : "bg-zinc-900 text-zinc-400"}`}
               >
                 {SORT_LABELS[key]}
               </button>
             ))}
-            <button onClick={download} className="ml-auto rounded bg-lime-400 px-3 py-1.5 text-xs font-medium text-black">
+            <button onClick={download} className="ml-auto rounded bg-accent px-3 py-1.5 text-xs font-medium text-white">
               Download CSV
             </button>
           </div>

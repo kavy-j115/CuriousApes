@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { updateUserRole, setUserClientAccess, grantTemporaryAccess, revokeAccess, deleteUserRecord } from "../actions";
-import { ROLE_THEME } from "@/lib/roleTheme";
+import Select from "../../_components/Select";
+import Checkbox from "../../_components/Checkbox";
 import type { Role } from "@/lib/auth/profile";
 
 type Client = { client_id: string; display_name: string };
@@ -98,19 +99,15 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
           <p className="text-xs text-zinc-500">{user.email}</p>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={role}
-            disabled={isSelf || pending}
-            onChange={(e) => handleRoleChange(e.target.value as Role)}
-            className={`rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs ${ROLE_THEME[role].accentText} disabled:opacity-50`}
-            title={isSelf ? "Can't change your own role" : undefined}
-          >
-            <option value="admin">Admin</option>
-            <option value="user">User</option>
-            <option value="client">Client</option>
-          </select>
+          <span title={isSelf ? "Can't change your own role" : undefined} className={isSelf || pending ? "pointer-events-none opacity-50" : ""}>
+            <Select value={role} onChange={(v) => handleRoleChange(v as Role)}>
+              <option value="admin">Admin</option>
+              <option value="user">User</option>
+              <option value="client">Client</option>
+            </Select>
+          </span>
           {!isSelf && (
-            <button onClick={handleDelete} disabled={pending} aria-label="Delete user" className="rounded p-1.5 text-zinc-500 hover:bg-red-950/40 hover:text-red-400">
+            <button onClick={handleDelete} disabled={pending} aria-label="Delete user" className="rounded p-1.5 text-zinc-500 hover:bg-status-bad/10 hover:text-status-bad">
               <Trash2 size={14} />
             </button>
           )}
@@ -122,12 +119,14 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
           <p className="mb-1.5 text-xs font-medium text-zinc-400">Permanent client access</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
             {clients.map((c) => (
-              <label key={c.client_id} className="flex items-center gap-1.5 text-xs text-zinc-300">
-                <input type="checkbox" checked={selected.has(c.client_id)} onChange={() => toggleClient(c.client_id)} />
-                {c.display_name}
-              </label>
+              <Checkbox
+                key={c.client_id}
+                checked={selected.has(c.client_id)}
+                onChange={() => toggleClient(c.client_id)}
+                label={c.display_name}
+              />
             ))}
-            <button onClick={saveAccess} disabled={!dirty || pending} className="rounded bg-sky-500 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">
+            <button onClick={saveAccess} disabled={!dirty || pending} className="rounded bg-accent px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">
               {pending ? "Saving…" : "Save"}
             </button>
           </div>
@@ -139,10 +138,10 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
               const hours = hoursLeft(t.expires_at!);
               return (
                 <div key={t.client_id} className="flex items-center gap-2 text-xs text-zinc-300">
-                  <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-amber-400">
+                  <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
                     {client?.display_name ?? t.client_id} -- {hours > 0 ? `${hours}h left` : "expired"}
                   </span>
-                  <button onClick={() => revoke(t.client_id)} disabled={pending} className="text-zinc-500 hover:text-red-400">
+                  <button onClick={() => revoke(t.client_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
                     revoke
                   </button>
                 </div>
@@ -150,17 +149,13 @@ export default function UserRow({ user, clients, currentUserId }: { user: UserWi
             })}
             {unassignedClients.length > 0 && (
               <div className="flex items-center gap-2">
-                <select
-                  value={grantClientId}
-                  onChange={(e) => setGrantClientId(e.target.value)}
-                  className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200"
-                >
+                <Select value={grantClientId} onChange={setGrantClientId}>
                   <option value="">Grant 24h access to…</option>
                   {unassignedClients.map((c) => (
                     <option key={c.client_id} value={c.client_id}>{c.display_name}</option>
                   ))}
-                </select>
-                <button onClick={grant} disabled={!grantClientId || pending} className="rounded bg-amber-500 px-2.5 py-1 text-xs font-medium text-black disabled:opacity-40">
+                </Select>
+                <button onClick={grant} disabled={!grantClientId || pending} className="rounded bg-accent px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">
                   Grant
                 </button>
               </div>

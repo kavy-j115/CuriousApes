@@ -1,16 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
+import { resolveSelectedClient } from "@/lib/selectedClient";
 
 const TYPE_STYLES: Record<string, string> = {
-  revenue_drop: "bg-red-500/10 text-red-400",
-  cac_increase: "bg-red-500/10 text-red-400",
-  roas_drop: "bg-red-500/10 text-red-400",
+  revenue_drop: "bg-status-bad/10 text-status-bad",
+  cac_increase: "bg-status-bad/10 text-status-bad",
+  roas_drop: "bg-status-bad/10 text-status-bad",
 };
 
 function styleFor(alertType: string): string {
   if (TYPE_STYLES[alertType]) return TYPE_STYLES[alertType];
-  if (alertType.startsWith("sync_failure")) return "bg-amber-500/10 text-amber-400";
-  if (alertType.startsWith("data_quality_")) return "bg-amber-500/10 text-amber-400";
-  if (alertType.startsWith("anomaly_")) return "bg-purple-500/10 text-purple-400";
+  if (alertType.startsWith("sync_failure")) return "bg-status-warning/10 text-status-warning";
+  if (alertType.startsWith("data_quality_")) return "bg-status-warning/10 text-status-warning";
+  if (alertType.startsWith("anomaly_")) return "bg-accent/10 text-accent";
   return "bg-zinc-800 text-zinc-300";
 }
 
@@ -30,7 +31,7 @@ export default async function AlertsPage({
   const supabase = await createClient();
 
   const { data: clients } = await supabase.from("clients").select("client_id, display_name").order("display_name");
-  const selectedClient = client ?? clients?.[0]?.client_id ?? "";
+  const selectedClient = await resolveSelectedClient(client, clients ?? []);
 
   const { data: alerts } = selectedClient
     ? await supabase
@@ -44,9 +45,7 @@ export default async function AlertsPage({
 
   return (
     <div className="max-w-3xl">
-      <h1 className="mb-1 text-xl font-semibold text-zinc-50">Alerts</h1>
-      <p className="mb-6 text-xs text-zinc-500">Threshold breaches, sync failures, data quality issues, and statistical anomalies, most recent first.</p>
-
+      <h1 className="mb-6 text-xl font-semibold text-zinc-50">Alerts</h1>
       {(!alerts || alerts.length === 0) && (
         <p className="text-sm text-zinc-500">No alerts for this client yet.</p>
       )}

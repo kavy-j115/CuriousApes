@@ -1,5 +1,6 @@
 "use client";
 
+import Select from "../_components/Select";
 import { useState, useMemo } from "react";
 import {
   parseCustomersExport,
@@ -137,15 +138,12 @@ export default function SegmentsClient() {
 
   return (
     <div className="max-w-2xl">
-      <p className="mb-6 text-xs text-zinc-500">Runs entirely in your browser -- the file is never uploaded anywhere.</p>
-
       <div className="mb-4">
         <label className="mb-1 block text-sm font-medium text-zinc-300">Campaign type</label>
-        <select
-          className={inputClass}
+        <Select
           value={recipe}
-          onChange={(e) => {
-            setRecipe(e.target.value as RecipeKey);
+          onChange={(v) => {
+            setRecipe(v as RecipeKey);
             setResult(null);
             setFileWarning(null);
           }}
@@ -153,8 +151,7 @@ export default function SegmentsClient() {
           {Object.entries(RECIPES).map(([key, r]) => (
             <option key={key} value={key}>{r.label}</option>
           ))}
-        </select>
-        <p className="mt-1 text-xs text-zinc-500">{activeRecipe.description}</p>
+        </Select>
       </div>
 
       {recipe === "repeat" && (
@@ -188,14 +185,12 @@ export default function SegmentsClient() {
         <div className="mb-4">
           {csvText && (
             <div className="mb-3 flex items-center gap-3 text-sm text-zinc-300">
-              <span className="text-zinc-400">Treat this file as a</span>
-              <select value={customShape} onChange={(e) => setCustomShape(e.target.value as "customers" | "orders")} className={`w-40 ${inputClass}`}>
+              <Select value={customShape} onChange={(v) => setCustomShape(v as "customers" | "orders")}>
                 <option value="customers">Customers export</option>
                 <option value="orders">Orders export</option>
-              </select>
+              </Select>
             </div>
           )}
-          {!csvText && <p className="text-xs text-zinc-500">Upload a file below, then build your conditions.</p>}
           {csvText && <ConditionBuilder fields={customFields} conditions={customConditions} onChange={setCustomConditions} />}
           {customPreviewCount !== null && (
             <p className="mt-2 text-xs text-zinc-400">
@@ -213,16 +208,16 @@ export default function SegmentsClient() {
           type="file"
           accept=".csv"
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-          className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-sky-500 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
+          className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
         />
         {fileName && <p className="mt-1 text-xs text-zinc-500">Loaded: {fileName}</p>}
-        {fileWarning && <p className="mt-1 text-xs text-amber-400">{fileWarning}</p>}
+        {fileWarning && <p className="mt-1 text-xs text-status-warning">{fileWarning}</p>}
       </div>
 
       <button
         onClick={process}
         disabled={!csvText}
-        className="mb-6 rounded bg-sky-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        className="mb-6 rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
       >
         Process
       </button>
@@ -241,7 +236,7 @@ export default function SegmentsClient() {
           <button
             onClick={download}
             disabled={result.customers.length === 0}
-            className="mt-3 rounded bg-lime-400 px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+            className="mt-3 rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             Download ConvertWay CSV
           </button>
