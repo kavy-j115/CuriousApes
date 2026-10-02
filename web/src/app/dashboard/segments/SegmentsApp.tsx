@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import SegmentsClient from "./SegmentsClient";
+import SegmentWizard from "./SegmentWizard";
 import ProductsClient from "./ProductsClient";
-import SamplePreview from "./SamplePreview";
 
 type Tab = "segments" | "products";
 
@@ -27,14 +26,7 @@ export default function SegmentsApp() {
         </button>
       </div>
 
-      {tab === "segments" ? (
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <SegmentsClient />
-          <SamplePreview />
-        </div>
-      ) : (
-        <ProductsClient />
-      )}
+      {tab === "segments" ? <SegmentWizard /> : <ProductsClient />}
     </div>
   );
 }

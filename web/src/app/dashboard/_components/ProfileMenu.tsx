@@ -43,6 +43,16 @@ export default function ProfileMenu({ profile }: { profile: Profile }) {
             </span>
           </div>
           <div className="my-1 border-t border-zinc-900" />
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              window.dispatchEvent(new Event("start-tour"));
+            }}
+            className="w-full rounded px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-900"
+          >
+            Take the tour
+          </button>
           <form action={logout}>
             <button
               type="submit"

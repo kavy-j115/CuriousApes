@@ -93,7 +93,7 @@ export default function ClientDropdown({
     : clients;
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} data-tour="client-dropdown" className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

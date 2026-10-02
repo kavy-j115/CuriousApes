@@ -34,6 +34,7 @@ export default function Sidebar({ role }: { role: Role }) {
             <Link
               key={item.label}
               href={item.href}
+              data-tour={`nav-${item.label}`}
               target={item.external ? "_blank" : undefined}
               rel={item.external ? "noopener noreferrer" : undefined}
               className={`flex items-center gap-2.5 rounded-md border-l-2 px-3 py-2 text-sm transition-all ${
@@ -62,6 +63,7 @@ export default function Sidebar({ role }: { role: Role }) {
                 <Link
                   key={item.label}
                   href={item.href}
+                  data-tour={`nav-${item.label}`}
                   className={`flex items-center gap-2.5 rounded-md border-l-2 px-3 py-2 text-sm transition-all ${
                     active
                       ? ACTIVE_LINK_CLASS

@@ -246,6 +246,10 @@ def print_summary(client_id: str, results: list[StepResult]) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=3, help="how many days back to sync (default 3)")
+    parser.add_argument(
+        "--client",
+        help="sync only this client_id (still requires its sync switch to be on); default is every enabled client",
+    )
     args = parser.parse_args()
 
     since = (date.today() - timedelta(days=args.days)).isoformat()
@@ -256,6 +260,12 @@ def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     clients = load_all(conn)
 
+    if args.client:
+        clients = [c for c in clients if c["client_id"] == args.client]
+        if not clients:
+            print(f"No client with client_id '{args.client}' -- nothing to do.")
+            return
+
     if not clients:
         print("No clients found in config/clients/*.yaml -- nothing to do.")
         return
@@ -265,10 +275,7 @@ def main():
     any_errors = False
     for config in clients:
         if config.get("sync_enabled") is False:
-            print(f"
-{config['client_id']}
-{'-' * len(config['client_id'])}
-  [--] Skipped: sync is switched off for this client")
+            print_summary(config["client_id"], [StepResult("Sync", "skipped", "switched off for this client")])
             continue
         results = run_for_client(conn, config, since, whatsapp_config)
         print_summary(config["client_id"], results)

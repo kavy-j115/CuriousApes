@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import Papa from "papaparse";
-import { parseOrdersExport, looksLikeOrdersExport, looksLikeCustomersExport } from "@/lib/segmentRecipes";
+import { Upload } from "lucide-react";
+import { parseExport, looksLikeOrdersExport, looksLikeCustomersExport } from "@/lib/segmentRecipes";
 import { aggregateProductStats, type ProductStats } from "@/lib/productAnalytics";
 
 type SortKey = "unitsSold" | "orderCount" | "revenue";
@@ -19,26 +20,20 @@ export default function ProductsClient() {
   const [stats, setStats] = useState<ProductStats[] | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("unitsSold");
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     setStats(null);
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      const headerLine = text.split("\n")[0];
-      const headers = headerLine.split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-      if (!looksLikeOrdersExport(headers)) {
-        setFileWarning(
-          looksLikeCustomersExport(headers)
-            ? "This looks like a Customers export. Product analytics needs an Orders export instead -- that's where line-item sales data lives."
-            : "This doesn't look like a Shopify Orders export -- check the file."
-        );
-        return;
-      }
-      setFileWarning(null);
-      setStats(aggregateProductStats(parseOrdersExport(text)));
-    };
-    reader.readAsText(file);
+    const { rows, headers } = parseExport(await file.text());
+    if (!looksLikeOrdersExport(headers)) {
+      setFileWarning(
+        looksLikeCustomersExport(headers)
+          ? "This is a Customers export. Product Insights needs an Orders export."
+          : "This doesn't look like a Shopify Orders export."
+      );
+      return;
+    }
+    setFileWarning(null);
+    setStats(aggregateProductStats(rows));
   }
 
   const sorted = useMemo(() => {
@@ -62,19 +57,11 @@ export default function ProductsClient() {
 
   return (
     <div className="max-w-3xl">
-      <p className="mb-6 text-xs text-zinc-500">
-        Upload an Orders export to see best sellers, highest-revenue products, and most-ordered products.
-      </p>
-
-      <div className="mb-4 flex items-center gap-3">
-        <input
-          type="file"
-          accept=".csv"
-          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-          className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
-        />
-        {fileName && <p className="text-xs text-zinc-500">{fileName}</p>}
-      </div>
+      <label className="mb-4 flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center hover:border-accent">
+        <Upload size={18} className="text-zinc-500" />
+        <span className="text-sm text-zinc-300">{fileName ?? "Upload a Shopify Orders export (.csv)"}</span>
+        <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+      </label>
       {fileWarning && <p className="mb-4 text-xs text-status-warning">{fileWarning}</p>}
 
       {stats && (
@@ -90,7 +77,7 @@ export default function ProductsClient() {
                 {SORT_LABELS[key]}
               </button>
             ))}
-            <button onClick={download} className="ml-auto rounded bg-accent px-3 py-1.5 text-xs font-medium text-white">
+            <button onClick={download} className="ml-auto rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white">
               Download CSV
             </button>
           </div>

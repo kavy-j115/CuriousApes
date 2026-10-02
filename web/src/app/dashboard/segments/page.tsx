@@ -10,7 +10,7 @@ export default async function SegmentsPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-zinc-50">Campaign Segment Export</h1>
+      <h1 className="mb-4 text-xl font-semibold text-zinc-50">Segments</h1>
       <SegmentsApp />
     </div>
   );

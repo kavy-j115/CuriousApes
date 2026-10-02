@@ -9,6 +9,7 @@ export type Profile = {
   email: string | null;
   role: Role;
   display_name: string | null;
+  has_seen_tour: boolean;
 };
 
 // Reads the logged-in user's role via the session-aware client, not the
@@ -24,7 +25,7 @@ export async function getCurrentProfile(
 
   const { data: profile } = await supabase
     .from("user_profiles")
-    .select("id, role, display_name")
+    .select("id, role, display_name, has_seen_tour")
     .eq("id", userId)
     .single();
 
@@ -35,6 +36,7 @@ export async function getCurrentProfile(
     email: (data!.claims.email as string) ?? null,
     role: profile.role as Role,
     display_name: profile.display_name as string | null,
+    has_seen_tour: Boolean(profile.has_seen_tour),
   };
 }
 

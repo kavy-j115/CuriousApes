@@ -35,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const initialSelectedClient = await resolveSelectedClient(undefined, clients ?? []);
 
   return (
-    <DashboardShell profile={profile} clients={clients ?? []} initialSelectedClient={initialSelectedClient}>
+    <DashboardShell profile={profile} clients={clients ?? []} initialSelectedClient={initialSelectedClient} showTour={!profile.has_seen_tour}>
       {children}
     </DashboardShell>
   );
