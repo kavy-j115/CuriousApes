@@ -46,10 +46,12 @@ export default function ClientRow({
   client,
   users,
   access,
+  clientLogin,
 }: {
   client: ClientRowData;
   users: AccessUser[];
   access: AccessRow[];
+  clientLogin: string | null;
 }) {
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [useDefault, setUseDefault] = useState(!client.report_config);
@@ -78,7 +80,7 @@ export default function ClientRow({
   const [collabUserId, setCollabUserId] = useState("");
   const userLabel = (id: string) => users.find((u) => u.id === id)?.label ?? id;
   const accessDirty = accessSelected.length !== permanentUserIds.length || permanentUserIds.some((id) => !accessSelected.includes(id));
-  const collabCandidates = users.filter((u) => !access.some((a) => a.user_id === u.id));
+  const collabCandidates = users.filter((u) => u.role === "user" && !access.some((a) => a.user_id === u.id));
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [storeDomain, setStoreDomain] = useState(client.shopify_store_domain ?? "");
   const [metaAccount, setMetaAccount] = useState(client.meta_ad_account_id ?? "");
@@ -240,7 +242,10 @@ export default function ClientRow({
     <>
       <tr className="border-b border-zinc-900 text-zinc-300">
         <td className="px-3 py-1.5 font-mono text-xs">{client.client_id}</td>
-        <td className="px-3 py-1.5">{client.display_name}</td>
+        <td className="px-3 py-1.5">
+          {client.display_name}
+          <span className="block text-xs text-zinc-500">{clientLogin ?? "No client login"}</span>
+        </td>
         <td className="px-3 py-1.5">
           <button onClick={() => setColumnsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
             {columnsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} columns

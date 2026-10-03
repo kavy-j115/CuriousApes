@@ -11,7 +11,8 @@ export default async function AdminUsersPage() {
 
   const [{ data: clients }, { data: profiles }, { data: access }] = await Promise.all([
     supabase.from("clients").select("client_id, display_name").order("display_name"),
-    supabase.from("user_profiles").select("id, email, display_name, role").order("created_at"),
+    // Agency people only -- client logins are created and shown on the Clients page.
+    supabase.from("user_profiles").select("id, email, display_name, role").in("role", ["admin", "user"]).order("created_at"),
     supabase.from("client_access").select("user_id, client_id, expires_at"),
   ]);
 
@@ -30,10 +31,10 @@ export default async function AdminUsersPage() {
     access: accessByUser.get(p.id as string) ?? [],
   }));
 
-  // Other non-admin users who have permanent clients -- the people you can
-  // "collab with" (borrow their client list for 24h).
+  // Other agency users (role "user") who have permanent clients -- the people
+  // you can "collab with". Client accounts aren't part of the agency.
   const collabCandidates = users
-    .filter((u) => u.role !== "admin" && u.access.some((a) => !a.expires_at))
+    .filter((u) => u.role === "user" && u.access.some((a) => !a.expires_at))
     .map((u) => ({ id: u.id, label: u.display_name || u.email || u.id }));
 
   return (

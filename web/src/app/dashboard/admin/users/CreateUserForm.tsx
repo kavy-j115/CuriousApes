@@ -61,25 +61,9 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
             <Select name="role" value={role} onChange={setRole} className="[&_select]:py-2">
               <option value="admin">Admin</option>
               <option value="user">User</option>
-              <option value="client">Client</option>
             </Select>
           </div>
         </div>
-
-        {role === "client" && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">Client</label>
-            {clients.length > 0 ? (
-              <Select name="client_ids" required className="[&_select]:py-2">
-                {clients.map((c) => (
-                  <option key={c.client_id} value={c.client_id}>{c.display_name}</option>
-                ))}
-              </Select>
-            ) : (
-              <p className="text-xs text-zinc-500">No clients exist yet -- add one first.</p>
-            )}
-          </div>
-        )}
 
         {role === "user" && (
           <div>

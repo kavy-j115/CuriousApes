@@ -121,7 +121,6 @@ export default function UserRow({
             <Select value={role} onChange={(v) => handleRoleChange(v as Role)}>
               <option value="admin">Admin</option>
               <option value="user">User</option>
-              <option value="client">Client</option>
             </Select>
           </span>
           {!isSelf && (
@@ -149,50 +148,52 @@ export default function UserRow({
             </div>
           </div>
 
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h)</p>
-            <div className="flex flex-col gap-1.5">
-              {temporary.map((t) => {
-                const client = clients.find((c) => c.client_id === t.client_id);
-                const hours = hoursLeft(t.expires_at!);
-                return (
-                  <div key={t.client_id} className="flex items-center gap-2 text-xs text-zinc-300">
-                    <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
-                      {client?.display_name ?? t.client_id} -- {hours > 0 ? `${hours}h left` : "expired"}
-                    </span>
-                    <button onClick={() => revoke(t.client_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
-                      revoke
+          {role === "user" && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h)</p>
+              <div className="flex flex-col gap-1.5">
+                {temporary.map((t) => {
+                  const client = clients.find((c) => c.client_id === t.client_id);
+                  const hours = hoursLeft(t.expires_at!);
+                  return (
+                    <div key={t.client_id} className="flex items-center gap-2 text-xs text-zinc-300">
+                      <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
+                        {client?.display_name ?? t.client_id} -- {hours > 0 ? `${hours}h left` : "expired"}
+                      </span>
+                      <button onClick={() => revoke(t.client_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
+                        revoke
+                      </button>
+                    </div>
+                  );
+                })}
+                {(otherUsers.length > 0 || unassignedClients.length > 0) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select value={collabTarget} onChange={setCollabTarget}>
+                      <option value="">Share access with…</option>
+                      {otherUsers.length > 0 && (
+                        <optgroup label="Another user's clients">
+                          {otherUsers.map((u) => (
+                            <option key={u.id} value={`user:${u.id}`}>{u.label}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {unassignedClients.length > 0 && (
+                        <optgroup label="A single client">
+                          {unassignedClients.map((c) => (
+                            <option key={c.client_id} value={`client:${c.client_id}`}>{c.display_name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </Select>
+                    <button onClick={grant} disabled={!collabTarget || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                      Grant
                     </button>
                   </div>
-                );
-              })}
-              {(otherUsers.length > 0 || unassignedClients.length > 0) && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select value={collabTarget} onChange={setCollabTarget}>
-                    <option value="">Share access with…</option>
-                    {otherUsers.length > 0 && (
-                      <optgroup label="Another user's clients">
-                        {otherUsers.map((u) => (
-                          <option key={u.id} value={`user:${u.id}`}>{u.label}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {unassignedClients.length > 0 && (
-                      <optgroup label="A single client">
-                        {unassignedClients.map((c) => (
-                          <option key={c.client_id} value={`client:${c.client_id}`}>{c.display_name}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </Select>
-                  <button onClick={grant} disabled={!collabTarget || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-                    Grant
-                  </button>
-                </div>
-              )}
-              {collabMessage && <p className="text-xs text-zinc-400">{collabMessage}</p>}
+                )}
+                {collabMessage && <p className="text-xs text-zinc-400">{collabMessage}</p>}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

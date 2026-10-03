@@ -23,11 +23,15 @@ async function requireAdmin() {
   return { supabase, profile };
 }
 
-export async function createClientRecord(formData: FormData) {
+export async function createClientRecord(
+  formData: FormData
+): Promise<{ ok: true; login?: { email: string; tempPassword: string }; loginError?: string } | { error: string }> {
   const { supabase } = await requireAdmin();
   const client_id = (formData.get("client_id") as string)?.trim();
   const display_name = (formData.get("display_name") as string)?.trim();
-  if (!client_id || !display_name) throw new Error("client_id and display_name are required.");
+  if (!client_id || !display_name) return { error: "Client ID and brand name are required." };
+  const clientEmail = ((formData.get("client_email") as string) ?? "").trim();
+  if (clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)) return { error: "Client email doesn't look valid." };
 
   // Alert thresholds + WhatsApp recipients can be set right away at
   // creation, or left blank and filled in later from the same row's
@@ -46,11 +50,16 @@ export async function createClientRecord(formData: FormData) {
     .map((p) => p.trim())
     .filter(Boolean) ?? [];
 
-  const connections = normalizeConnections({
-    shopifyStoreDomain: formData.get("shopify_store_domain") as string | null,
-    metaAdAccountId: formData.get("meta_ad_account_id") as string | null,
-    ga4PropertyId: formData.get("ga4_property_id") as string | null,
-  });
+  let connections;
+  try {
+    connections = normalizeConnections({
+      shopifyStoreDomain: formData.get("shopify_store_domain") as string | null,
+      metaAdAccountId: formData.get("meta_ad_account_id") as string | null,
+      ga4PropertyId: formData.get("ga4_property_id") as string | null,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Invalid connection details." };
+  }
 
   // sync_enabled is left at its database default (false): a new client is
   // never fetched until it's switched on deliberately.
@@ -61,9 +70,24 @@ export async function createClientRecord(formData: FormData) {
     whatsapp_recipients: recipients,
     ...connections,
   });
-  if (error) throw new Error(error.message);
+  if (error) return { error: error.code === "23505" ? "A client with that ID already exists." : error.message };
+
+  // The client's own login (role "client", tied to this one store). If it
+  // fails (e.g. that email already has an account) the client record is kept
+  // and the problem is reported, rather than silently half-failing.
+  let login: { email: string; tempPassword: string } | undefined;
+  let loginError: string | undefined;
+  if (clientEmail) {
+    try {
+      login = await createAccount({ email: clientEmail, display_name: display_name, role: "client", clientIds: [client_id] });
+    } catch (e) {
+      loginError = e instanceof Error ? e.message : "Couldn't create the client's login.";
+    }
+  }
 
   revalidatePath("/dashboard/admin/clients");
+  revalidatePath("/dashboard/admin/permissions");
+  return { ok: true, login, loginError };
 }
 
 // Changing the store domain invalidates an earlier connection (the stored
@@ -212,23 +236,20 @@ export async function deleteUserRecord(userId: string): Promise<{ fullyDeleted: 
 // caller can show it ONCE -- it is never stored anywhere, and there's no
 // way to retrieve it again after this call returns (matches this
 // project's "never persist a credential outside Vault" stance).
-export async function createUser(formData: FormData) {
-  await requireAdmin();
-
-  const email = (formData.get("email") as string)?.trim();
-  const display_name = (formData.get("display_name") as string)?.trim();
-  const role = formData.get("role") as string;
-  const clientIds = formData.getAll("client_ids") as string[];
-
-  if (!email || !["admin", "user", "client"].includes(role)) {
-    throw new Error("email and a valid role are required.");
-  }
-
+// Creates a Supabase Auth account + its profile + (optionally) client access,
+// returning a one-time temporary password. Shared by createUser (agency
+// staff) and createClientRecord (a client's own login).
+async function createAccount(input: {
+  email: string;
+  display_name: string | null;
+  role: "admin" | "user" | "client";
+  clientIds: string[];
+}): Promise<{ email: string; tempPassword: string }> {
   const admin = getAdminClient();
   const tempPassword = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
   const { data: created, error: createError } = await admin.auth.admin.createUser({
-    email,
+    email: input.email,
     password: tempPassword,
     email_confirm: true,
   });
@@ -238,25 +259,49 @@ export async function createUser(formData: FormData) {
 
   const { error: profileError } = await admin
     .from("user_profiles")
-    .insert({ id: created.user.id, role, display_name: display_name || null, email });
+    .insert({ id: created.user.id, role: input.role, display_name: input.display_name, email: input.email });
   if (profileError) throw new Error(profileError.message);
 
-  if (clientIds.length > 0) {
+  if (input.clientIds.length > 0) {
     const { error: accessError } = await admin
       .from("client_access")
-      .insert(clientIds.map((client_id) => ({ user_id: created.user!.id, client_id })));
+      .insert(input.clientIds.map((client_id) => ({ user_id: created.user!.id, client_id })));
     if (accessError) throw new Error(accessError.message);
   }
+
+  return { email: input.email, tempPassword };
+}
+
+// Agency staff only (admin or user). A client's login is created from the
+// Clients page, together with the client itself.
+export async function createUser(formData: FormData) {
+  await requireAdmin();
+
+  const email = (formData.get("email") as string)?.trim();
+  const display_name = (formData.get("display_name") as string)?.trim();
+  const role = formData.get("role") as string;
+  const clientIds = formData.getAll("client_ids") as string[];
+
+  if (!email || !["admin", "user"].includes(role)) {
+    throw new Error("email and a valid role (admin or user) are required.");
+  }
+
+  const result = await createAccount({
+    email,
+    display_name: display_name || null,
+    role: role as "admin" | "user",
+    clientIds: role === "user" ? clientIds : [],
+  });
 
   revalidatePath("/dashboard/admin/users");
   revalidatePath("/dashboard/admin/permissions");
 
-  return { email, tempPassword };
+  return result;
 }
 
 export async function updateUserRole(userId: string, role: string) {
   const { supabase } = await requireAdmin();
-  if (!["admin", "user", "client"].includes(role)) throw new Error("Invalid role.");
+  if (!["admin", "user"].includes(role)) throw new Error("Invalid role.");
 
   const { error } = await supabase.from("user_profiles").update({ role }).eq("id", userId);
   if (error) throw new Error(error.message);
@@ -272,6 +317,8 @@ export async function updateUserRole(userId: string, role: string) {
 // stops granting access the moment expires_at passes.
 export async function grantTemporaryAccess(userId: string, clientId: string) {
   const { supabase } = await requireAdmin();
+  const { data: target } = await supabase.from("user_profiles").select("role").eq("id", userId).maybeSingle();
+  if (target?.role !== "user") throw new Error("Collab can only be given to agency users.");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   const { error } = await supabase
@@ -320,6 +367,10 @@ export async function grantCollabWithUser(
 ): Promise<{ granted: number } | { error: string }> {
   const { supabase } = await requireAdmin();
   if (userId === otherUserId) return { error: "Pick a different user." };
+  const { data: roles } = await supabase.from("user_profiles").select("id, role").in("id", [userId, otherUserId]);
+  if ((roles ?? []).length !== 2 || (roles ?? []).some((r) => r.role !== "user")) {
+    return { error: "Collab is only between agency users." };
+  }
 
   const [{ data: theirs }, { data: mine }] = await Promise.all([
     supabase.from("client_access").select("client_id").eq("user_id", otherUserId).is("expires_at", null),
@@ -346,17 +397,26 @@ export async function grantCollabWithUser(
 export async function setClientUserAccess(clientId: string, userIds: string[]) {
   const { supabase } = await requireAdmin();
 
-  const { error: deleteError } = await supabase
-    .from("client_access")
-    .delete()
-    .eq("client_id", clientId)
-    .is("expires_at", null);
-  if (deleteError) throw new Error(deleteError.message);
+  // Only AGENCY users' rows are replaced: the client's own login (role
+  // "client") keeps its access to its store no matter what is saved here.
+  const { data: agencyUsers } = await supabase.from("user_profiles").select("id").eq("role", "user");
+  const agencyIds = (agencyUsers ?? []).map((u) => u.id as string);
+  const validIds = userIds.filter((id) => agencyIds.includes(id));
 
-  if (userIds.length > 0) {
+  if (agencyIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("client_access")
+      .delete()
+      .eq("client_id", clientId)
+      .is("expires_at", null)
+      .in("user_id", agencyIds);
+    if (deleteError) throw new Error(deleteError.message);
+  }
+
+  if (validIds.length > 0) {
     const { error: insertError } = await supabase
       .from("client_access")
-      .insert(userIds.map((user_id) => ({ user_id, client_id: clientId })));
+      .insert(validIds.map((user_id) => ({ user_id, client_id: clientId })));
     if (insertError) throw new Error(insertError.message);
   }
 

@@ -1,11 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile, assertRole } from "@/lib/auth/profile";
-import { createClientRecord } from "../actions";
 import ClientRow from "./ClientRow";
+import CreateClientForm from "./CreateClientForm";
 import type { ReportConfig } from "@/lib/reportColumns";
-
-const inputClass =
-  "rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-accent focus:outline-none";
 
 export default async function AdminClientsPage() {
   const supabase = await createClient();
@@ -26,53 +23,7 @@ export default async function AdminClientsPage() {
     <div className="max-w-3xl">
       <h1 className="mb-4 text-xl font-semibold text-zinc-50">Clients</h1>
 
-      <form action={createClientRecord} className="mb-8 flex flex-col gap-3 rounded-lg border border-zinc-800 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">client_id</label>
-            <input name="client_id" required placeholder="acme-brand" className={inputClass} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">Display name</label>
-            <input name="display_name" required placeholder="Acme Brand" className={inputClass} />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">Revenue drop alert %</label>
-            <input name="revenue_change_pct" type="number" placeholder="off" className={`w-24 ${inputClass}`} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">CAC increase alert %</label>
-            <input name="cac_change_pct" type="number" placeholder="off" className={`w-24 ${inputClass}`} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">ROAS drop alert %</label>
-            <input name="roas_change_pct" type="number" placeholder="off" className={`w-24 ${inputClass}`} />
-          </div>
-          <div className="flex-1">
-            <label className="mb-1 block text-xs font-medium text-zinc-400">WhatsApp recipients</label>
-            <input name="whatsapp_recipients" placeholder="+919876543210, +919876543211" className={inputClass} />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">Shopify store domain</label>
-            <input name="shopify_store_domain" placeholder="brand.myshopify.com" className={inputClass} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">Meta ad account ID</label>
-            <input name="meta_ad_account_id" placeholder="1234567890" className={`w-44 ${inputClass}`} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-400">GA4 property ID</label>
-            <input name="ga4_property_id" placeholder="123456789" className={`w-40 ${inputClass}`} />
-          </div>
-        </div>
-        <button type="submit" className="self-start rounded-md bg-accent px-4 py-2 text-sm font-medium text-white">
-          Add client
-        </button>
-      </form>
+      <CreateClientForm />
 
       <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
         <table className="w-full border-collapse text-sm">
@@ -92,7 +43,8 @@ export default async function AdminClientsPage() {
             {(clients ?? []).map((c) => (
               <ClientRow
                 key={c.client_id}
-                users={(users ?? []).map((u) => ({ id: u.id as string, label: (u.display_name || u.email || u.id) as string, role: u.role as string }))}
+                users={(users ?? []).filter((u) => u.role === "user").map((u) => ({ id: u.id as string, label: (u.display_name || u.email || u.id) as string, role: u.role as string }))}
+                clientLogin={(users ?? []).find((u) => u.role === "client" && (access ?? []).some((a) => a.user_id === u.id && a.client_id === c.client_id && !a.expires_at))?.email ?? null}
                 access={(access ?? []).filter((a) => a.client_id === c.client_id).map((a) => ({ user_id: a.user_id as string, expires_at: a.expires_at as string | null }))}
                 client={{
                   ...c,
