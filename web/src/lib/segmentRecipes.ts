@@ -423,12 +423,41 @@ export type OutputResult = {
   skippedInvalidPhone: number;
 };
 
+// The plain "just give me the list" export, before any output template:
+// every customer in the segment with the standard fields, nobody dropped
+// for a missing or invalid phone (the phone columns are simply blank).
+const LIST_COLUMNS: { header: string; field: OutputField }[] = [
+  { header: "Email", field: "email" },
+  { header: "First name", field: "firstName" },
+  { header: "Last name", field: "lastName" },
+  { header: "Phone", field: "phone" },
+  { header: "Country code", field: "countryCode" },
+  { header: "Orders", field: "orders" },
+  { header: "Total spent", field: "totalSpent" },
+  { header: "Last order date", field: "lastOrderDate" },
+  { header: "Days since last order", field: "recencyDays" },
+];
+
+export function buildListCsv(customers: SegmentCustomer[]): string {
+  return buildOutput(
+    customers,
+    LIST_COLUMNS.map((c) => c.header),
+    LIST_COLUMNS.map((c) => c.field),
+    { keepWithoutPhone: true }
+  ).csv;
+}
+
 // `mapping[i]` is the field for template column i ("" = blank). When any
 // mapped column is a phone field, customers without a usable number are left
 // out and counted -- never silently dropped, never exported with a blank
 // phone the destination would reject.
-export function buildOutput(customers: SegmentCustomer[], headers: string[], mapping: (OutputField | "")[]): OutputResult {
-  const needsPhone = mapping.some((f) => f !== "" && PHONE_FIELDS.includes(f));
+export function buildOutput(
+  customers: SegmentCustomer[],
+  headers: string[],
+  mapping: (OutputField | "")[],
+  options: { keepWithoutPhone?: boolean } = {}
+): OutputResult {
+  const needsPhone = !options.keepWithoutPhone && mapping.some((f) => f !== "" && PHONE_FIELDS.includes(f));
   let skippedNoPhone = 0;
   let skippedInvalidPhone = 0;
   const rows: string[][] = [];

@@ -53,13 +53,13 @@ class ShopifyGraphQLError(Exception):
     pass
 
 
-def _endpoint(store_domain: str) -> str:
-    return f"https://{store_domain}/admin/api/{API_VERSION}/graphql.json"
+def _endpoint(store_domain: str, api_version: str = API_VERSION) -> str:
+    return f"https://{store_domain}/admin/api/{api_version}/graphql.json"
 
 
-def _post(store_domain: str, access_token: str, query: str, variables: dict) -> dict:
+def _post(store_domain: str, access_token: str, query: str, variables: dict, api_version: str = API_VERSION) -> dict:
     response = requests.post(
-        _endpoint(store_domain),
+        _endpoint(store_domain, api_version),
         json={"query": query, "variables": variables},
         headers={
             "X-Shopify-Access-Token": access_token,

@@ -19,6 +19,8 @@ export type ReportRow = {
   total_discounts: string | null;
   total_refunded: string | null;
   total_sales: string | null;
+  mtd_total_sales: string | null;
+  lmtd_total_sales: string | null;
 };
 
 export function fmtNum(v: number | string | null): string {
@@ -55,6 +57,12 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
   const totalRefunded = sum((r) => r.total_refunded);
   const totalSales = sum((r) => r.total_sales);
 
+  const aovPairs = rows
+    .filter((r) => r.aov !== null && r.aov !== undefined && Number(r.order_count) > 0)
+    .map((r) => [Number(r.aov), Number(r.order_count)] as const);
+  const aovOrders = aovPairs.reduce((acc, [, o]) => acc + o, 0);
+  const weightedAov = aovOrders > 0 ? aovPairs.reduce((acc, [a, o]) => acc + a * o, 0) / aovOrders : null;
+
   const ratio = (numerator: number | null, denominator: number | null) =>
     numerator !== null && denominator ? numerator / denominator : null;
 
@@ -67,17 +75,22 @@ export function computeTotal(rows: ReportRow[]): ReportRow {
     order_count: orderCount,
     gross_revenue: String(grossRevenue),
     net_revenue: netRevenue === null ? "0" : String(netRevenue),
-    aov: String(ratio(totalSales, orderCount) ?? 0),
+    // Order-weighted average of the daily AOVs, which equals (gross - discounts) / orders
+    // over the whole period -- the same rule the Excel Total row uses.
+    aov: String(weightedAov ?? 0),
     amount_spent: amountSpent === null ? null : String(amountSpent),
     purchase_value: purchaseValue === null ? null : String(purchaseValue),
     proas: ratio(purchaseValue, amountSpent) as unknown as string,
     atc_pct: ratio(addToCarts, sessions) as unknown as string,
     conversion_pct: ratio(orderCount, sessions) as unknown as string,
-    checkout_pct: ratio(checkouts, sessions) as unknown as string,
+    // Checkout % = orders / sessions with cart additions (the agency's BHR definition).
+    checkout_pct: ratio(orderCount, addToCarts) as unknown as string,
     // MTD/LMTD are already-cumulative figures, not additive across days --
     // the most recent row's value is the meaningful one for a range total.
     mtd_sale: rows[0]?.mtd_sale ?? "0",
     lmtd_sale: rows[0]?.lmtd_sale ?? null,
+    mtd_total_sales: rows[0]?.mtd_total_sales ?? null,
+    lmtd_total_sales: rows[0]?.lmtd_total_sales ?? null,
     total_discounts: totalDiscounts === null ? null : String(totalDiscounts),
     total_refunded: totalRefunded === null ? null : String(totalRefunded),
     total_sales: totalSales === null ? null : String(totalSales),

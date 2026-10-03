@@ -1,197 +1,208 @@
-"""Generates the "Business Health Report" .xlsx, matching the target format
-supplied by the user, from daily_report_metrics.
+"""Generates the "Business Health Report" .xlsx -- the per-client daily report
+the agency sends -- from daily_report_metrics.
 
-Sessions/Amount Spent/PROAS/ATC%/Conversion%/Checkout% will be blank for any
-date where GA4/Meta have no data yet -- that's an honest reflection of
-pipeline state (connectors exist, real credentials/delivery data don't yet),
-not a bug. Blank, never a fake 0, so a SUM total isn't silently wrong.
+Follows the agency's own sample reports:
+- one row per day, accumulating through the month, then a Total row;
+- Total row: SUM for counts and amounts, a weighted ratio for PROAS / ATC % /
+  Conversion % / Checkout %, an ORDER-weighted average for AOV, and the LAST
+  day's running figure for MTD / LMTD (those are cumulative, not additive);
+- Checkout % is orders / sessions with cart additions;
+- PROAS is coloured on a continuous red -> yellow -> green scale based on the
+  values in the table itself (never fixed good/bad thresholds);
+- header colour, column choice, labels and extra computed columns (e.g. Zari's
+  "Organic Sales") are per client, from that client's report_config.
+
+Blank means "no data connected / not available" -- never a fake 0, so a SUM
+total isn't silently wrong.
 """
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.comments import Comment
 from openpyxl.utils import get_column_letter
 
-from src.reports.report_columns import DEFAULT_ROAS_THRESHOLDS
+from src.reports.formula_eval import evaluate_formula, FormulaError
+from src.reports.report_columns import resolve_columns, resolve_derived_columns, resolve_header_color
 
 FONT_NAME = "Arial"
-HEADER_FILL = PatternFill("solid", fgColor="4472C4")
-HEADER_FONT = Font(name=FONT_NAME, bold=True, color="FFFFFF")
 TITLE_FONT = Font(name=FONT_NAME, bold=True, size=14)
 BODY_FONT = Font(name=FONT_NAME)
+BOLD_FONT = Font(name=FONT_NAME, bold=True)
+THIN = Side(style="thin", color="000000")
+BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
-# (header label, db column, number format) -- the default column set, used
-# when a client has no report_config override (src/reports/report_columns.py
-# is the per-client-configurable version of this same list).
-COLUMNS = [
-    ("Day", "report_date", "DD-MM-YYYY"),
-    ("Sessions", "sessions", "#,##0"),
-    ("Sessions with cart additions", "add_to_carts", "#,##0"),
-    ("Orders", "order_count", "#,##0"),
-    ("Gross sales", "gross_revenue", "#,##0.00"),
-    ("Average order value", "aov", "#,##0.00"),
-    ("Amount Spent (Ad Spent)", "amount_spent", "#,##0.00"),
-    ("Purchase Value (Ad Account)", "purchase_value", "#,##0.00"),
-    ("PROAS", "proas", "0.0"),
-    ("ATC %", "atc_pct", "0.0%"),
-    ("Conversion %", "conversion_pct", "0.0%"),
-    ("Checkout %", "checkout_pct", "0.0%"),
-    ("MTD Sale", "mtd_sale", "#,##0.00"),
-    ("LMTD", "lmtd_sale", "#,##0.00"),
-]
-
-# Columns whose Total row should be SUM(); everything else is left as a
-# formula relative to the summed columns (AOV, PROAS, and the % columns
-# are ratios -- summing them directly would be meaningless).
-SUM_COLUMNS = {"sessions", "add_to_carts", "order_count", "gross_revenue", "net_revenue",
-                "amount_spent", "purchase_value", "mtd_sale", "lmtd_sale",
-                "total_sales", "total_discounts", "total_refunded"}
-
-# Each ratio column's Total-row formula and the two columns it divides.
+# Total row: which metrics sum, which are cumulative (take the last day), and
+# which are ratios of two summed columns. AOV is handled separately
+# (order-weighted average of the daily values).
+SUM_KEYS = {
+    "sessions", "add_to_carts", "order_count", "gross_revenue", "net_revenue",
+    "amount_spent", "purchase_value", "total_sales", "total_discounts", "total_refunded",
+}
+LAST_KEYS = {"mtd_sale", "lmtd_sale", "mtd_total_sales", "lmtd_total_sales"}
 RATIO_FORMULAS = {
-    "aov": ("total_sales", "order_count"),
     "proas": ("purchase_value", "amount_spent"),
     "atc_pct": ("add_to_carts", "sessions"),
     "conversion_pct": ("order_count", "sessions"),
-    "checkout_pct": ("checkouts", "sessions"),
+    "checkout_pct": ("order_count", "add_to_carts"),
 }
 
-# Not part of the target format's visible columns, but needed so the
-# Checkout % total can be a real formula (SUM/SUM) instead of a Python-
-# computed number typed in as a literal -- written as a hidden column.
-HIDDEN_COLUMNS = [("Checkouts (raw)", "checkouts", "#,##0")]
+
+def _is_dark(hex_color: str) -> bool:
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return (0.299 * r + 0.587 * g + 0.114 * b) < 150
 
 
-def generate_report(
-    rows: list[dict],
-    display_name: str,
-    output_path: str,
-    columns: list[tuple[str, str, str]] | None = None,
-    roas_thresholds: dict | None = None,
-) -> None:
-    """columns: (label, db_column, number_format) tuples, "Day" first --
-    defaults to the fixed COLUMNS above. Pass src.reports.report_columns
-    .resolve_columns(report_config) to respect a client's own column
-    choice/labels instead. A ratio formula (AOV, PROAS, ATC%, etc.) whose
-    dependency column isn't in the chosen set is simply left blank in the
-    Total row rather than crashing -- a client who drops "Orders" from
-    their report shouldn't break AOV's total, it just can't be computed."""
-    columns = columns or COLUMNS
-    roas_thresholds = roas_thresholds or DEFAULT_ROAS_THRESHOLDS
+def _num(v):
+    return None if v is None else float(v)
+
+
+def compute_totals(rows: list[dict]) -> dict:
+    """The Total row's values in Python (the Excel cells are live formulas;
+    this mirrors them so derived columns can be totalled from the totals)."""
+    def total(key):
+        vals = [_num(r.get(key)) for r in rows if r.get(key) is not None]
+        return sum(vals) if vals else None
+
+    out = {key: total(key) for key in SUM_KEYS}
+    for key in LAST_KEYS:
+        out[key] = _num(rows[-1].get(key)) if rows else None
+    weighted = [(_num(r.get("aov")), _num(r.get("order_count"))) for r in rows if r.get("aov") is not None and r.get("order_count")]
+    orders = sum(o for _, o in weighted)
+    out["aov"] = sum(a * o for a, o in weighted) / orders if orders else None
+    for key, (num, den) in RATIO_FORMULAS.items():
+        out[key] = out[num] / out[den] if out.get(num) is not None and out.get(den) else None
+    return out
+
+
+def _derived_value(formula: str, variables: dict):
+    try:
+        return evaluate_formula(formula, variables)
+    except FormulaError:
+        return None  # a bad formula leaves the cell blank, never crashes the report
+
+
+def generate_report(rows: list[dict], display_name: str, output_path: str, report_config: dict | None = None) -> None:
+    """rows: daily_report_metrics rows for the period, oldest first."""
+    metric_columns = resolve_columns(report_config)
+    derived = [d for d in resolve_derived_columns(report_config) if d.get("key") and d.get("label") and d.get("formula")]
+    header_color = resolve_header_color(report_config)
+    header_fill = PatternFill("solid", fgColor=header_color)
+    header_font = Font(name=FONT_NAME, bold=True, color="FFFFFF" if _is_dark(header_color) else "000000")
+
+    # (label, key, number format, derived formula or None). A derived column
+    # with an "after" key is placed right after that column (Zari's "Organic
+    # Sales" sits next to Total sales); otherwise it goes at the end.
+    columns = [(label, key, fmt, None) for label, key, fmt in metric_columns]
+    for d in derived:
+        entry = (d["label"], d["key"], "0.0%" if d.get("isPct") else "#,##0.00", d["formula"])
+        keys_now = [c[1] for c in columns]
+        if d.get("after") in keys_now:
+            columns.insert(keys_now.index(d["after"]) + 1, entry)
+        else:
+            columns.append(entry)
+    n_cols = len(columns)
+    keys = [c[1] for c in columns]
+
+    def col_letter(key):
+        return get_column_letter(keys.index(key) + 1) if key in keys else None
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Business Health Report"
 
-    n_cols = len(columns)
-    last_col_letter = get_column_letter(n_cols)
+    ws.merge_cells(f"A1:{get_column_letter(n_cols)}1")
+    ws["A1"].value = f"{display_name} - Business Health Report"
+    ws["A1"].font = TITLE_FONT
+    ws["A1"].alignment = Alignment(horizontal="center")
 
-    # Title
-    ws.merge_cells(f"A1:{last_col_letter}1")
-    title_cell = ws["A1"]
-    title_cell.value = f"{display_name} - Business Health Report"
-    title_cell.font = TITLE_FONT
-    title_cell.alignment = Alignment(horizontal="center")
-
-    needs_checkouts_helper = any(db_col == "checkout_pct" for _, db_col, _ in columns)
-    all_columns = columns + (HIDDEN_COLUMNS if needs_checkouts_helper else [])
-    n_hidden = len(HIDDEN_COLUMNS) if needs_checkouts_helper else 0
-
-    # Header
     header_row = 3
-    for col_idx, (label, _, _) in enumerate(all_columns, start=1):
+    for col_idx, (label, _, _, _) in enumerate(columns, start=1):
         cell = ws.cell(row=header_row, column=col_idx, value=label)
-        if col_idx <= n_cols:
-            cell.font = HEADER_FONT
-            cell.fill = HEADER_FILL
-            cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = BORDER
 
-    # Documented assumptions, visible to the reader on the cell itself --
-    # only attached if that column is actually present in this client's set.
-    conv_col_idx = _col_of_or_none(columns, "conversion_pct")
-    if conv_col_idx:
-        ws.cell(row=header_row, column=conv_col_idx).comment = Comment(
-            "Defined as Shopify order_count / GA4 sessions. This crosses two data "
-            "sources -- see docs/metrics.md if this isn't the intended definition.",
-            "D2C Analytics Pipeline",
+    if "sessions" in keys:
+        ws.cell(row=header_row, column=keys.index("sessions") + 1).comment = Comment(
+            "Blank means no traffic data for that date yet (not zero traffic).", "D2C Analytics Pipeline"
         )
-    sessions_col_idx = _col_of_or_none(columns, "sessions")
-    if sessions_col_idx:
-        ws.cell(row=header_row, column=sessions_col_idx).comment = Comment(
-            "Blank rows mean GA4 has no data for that date yet (connector exists, "
-            "real property credentials pending) -- not zero traffic.",
-            "D2C Analytics Pipeline",
+    if "checkout_pct" in keys:
+        ws.cell(row=header_row, column=keys.index("checkout_pct") + 1).comment = Comment(
+            "Orders divided by sessions with cart additions.", "D2C Analytics Pipeline"
         )
 
-    # Data rows
     first_data_row = header_row + 1
-    for row_offset, row in enumerate(rows):
-        r = first_data_row + row_offset
-        for col_idx, (_, db_col, number_format) in enumerate(all_columns, start=1):
-            cell = ws.cell(row=r, column=col_idx, value=row.get(db_col))
+    for offset, row in enumerate(rows):
+        r = first_data_row + offset
+        variables = {k: _num(row.get(k)) for k in set(keys) | SUM_KEYS | LAST_KEYS | {"aov", "proas"} if k != "report_date"}
+        for col_idx, (_, key, fmt, formula) in enumerate(columns, start=1):
+            if formula is not None:
+                value = _derived_value(formula, variables)
+                variables[key] = value  # later derived columns may build on this one
+            else:
+                value = row.get(key)
+            cell = ws.cell(row=r, column=col_idx, value=value)
             cell.font = BODY_FONT
-            cell.number_format = number_format
+            cell.number_format = fmt
+            cell.border = BORDER
+            cell.alignment = Alignment(horizontal="center")
 
-    # Total row
     total_row = first_data_row + len(rows)
-    ws.cell(row=total_row, column=1, value="Total").font = Font(name=FONT_NAME, bold=True)
+    last_data_row = total_row - 1
+    totals = compute_totals(rows)
+    total_vars = {k: v for k, v in totals.items()}
+    orders_letter = col_letter("order_count")
 
-    for col_idx, (_, db_col, number_format) in enumerate(all_columns, start=1):
-        if db_col == "report_date":
-            continue
-        col_letter = get_column_letter(col_idx)
-        data_range = f"{col_letter}{first_data_row}:{col_letter}{total_row - 1}"
+    for col_idx, (_, key, fmt, formula) in enumerate(columns, start=1):
         cell = ws.cell(row=total_row, column=col_idx)
-        cell.font = Font(name=FONT_NAME, bold=True)
-        cell.number_format = number_format
+        cell.font = BOLD_FONT
+        cell.number_format = fmt
+        cell.border = BORDER
+        cell.alignment = Alignment(horizontal="center")
+        letter = get_column_letter(col_idx)
+        data_range = f"{letter}{first_data_row}:{letter}{last_data_row}"
 
-        if db_col in SUM_COLUMNS or db_col == "checkouts":
+        if key == "report_date":
+            cell.value = "Total"
+        elif formula is not None:
+            # Derived columns are recomputed from the totals, not summed per day.
+            value = _derived_value(formula, total_vars)
+            total_vars[key] = value
+            cell.value = value
+        elif not rows:
+            continue
+        elif key in SUM_KEYS:
             cell.value = f"=SUM({data_range})"
-        elif db_col in RATIO_FORMULAS:
-            numerator_col, denominator_col = RATIO_FORMULAS[db_col]
-            num_letter = _col_letter_of_or_none(all_columns, numerator_col)
-            den_letter = _col_letter_of_or_none(all_columns, denominator_col)
+        elif key in LAST_KEYS:
+            cell.value = f"={letter}{last_data_row}"
+        elif key == "aov":
+            if orders_letter:
+                orders_range = f"{orders_letter}{first_data_row}:{orders_letter}{last_data_row}"
+                cell.value = f"=IFERROR(SUMPRODUCT({data_range},{orders_range})/{orders_letter}{total_row},0)"
+        elif key in RATIO_FORMULAS:
+            num_letter = col_letter(RATIO_FORMULAS[key][0])
+            den_letter = col_letter(RATIO_FORMULAS[key][1])
             if num_letter and den_letter:
                 cell.value = f"=IFERROR({num_letter}{total_row}/{den_letter}{total_row},0)"
-            # else: dependency column not in this client's set -- leave blank
-            # rather than guess or crash.
+            # else: a column this ratio needs isn't in this client's report --
+            # left blank rather than guessed.
 
-    # PROAS conditional color scale, anchored to this client's configured
-    # thresholds (green at/above `good`, red at/below `danger`) instead of
-    # an auto data-driven min/max -- keeps the Excel/DHR coloring consistent
-    # with what the same client sees on the web Reports page, rather than
-    # two independently-scaled gradients for the same number.
-    proas_col_idx = _col_of_or_none(columns, "proas")
-    if rows and proas_col_idx:
-        proas_col_letter = get_column_letter(proas_col_idx)
-        proas_range = f"{proas_col_letter}{first_data_row}:{proas_col_letter}{total_row - 1}"
+    # PROAS: continuous red -> yellow -> green scale over the table's own
+    # values (Total row included), like the agency's samples.
+    if rows and "proas" in keys:
+        pl = col_letter("proas")
         ws.conditional_formatting.add(
-            proas_range,
+            f"{pl}{first_data_row}:{pl}{total_row}",
             ColorScaleRule(
-                start_type="num", start_value=roas_thresholds["danger"], start_color="F8696B",
-                mid_type="num", mid_value=(roas_thresholds["danger"] + roas_thresholds["good"]) / 2, mid_color="FFEB84",
-                end_type="num", end_value=roas_thresholds["good"], end_color="63BE7B",
+                start_type="min", start_color="F8696B",
+                mid_type="percentile", mid_value=50, mid_color="FFEB84",
+                end_type="max", end_color="63BE7B",
             ),
         )
 
     for col_idx in range(1, n_cols + 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = 16
 
-    if n_hidden:
-        hidden_col_letter = get_column_letter(n_cols + 1)
-        ws.column_dimensions[hidden_col_letter].hidden = True
-
     wb.save(output_path)
-
-
-def _col_of_or_none(columns: list, db_col: str) -> int | None:
-    for i, (_, c, _) in enumerate(columns, start=1):
-        if c == db_col:
-            return i
-    return None
-
-
-def _col_letter_of_or_none(columns: list, db_col: str) -> str | None:
-    idx = _col_of_or_none(columns, db_col)
-    return get_column_letter(idx) if idx else None

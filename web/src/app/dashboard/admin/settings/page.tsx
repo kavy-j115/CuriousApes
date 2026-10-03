@@ -6,12 +6,12 @@ import { getCurrentProfile, assertRole } from "@/lib/auth/profile";
 
 const CONFIG_DIR = path.join(process.cwd(), "..", "config");
 
-// Only the agency-level Twilio sender config is still YAML-based -- there's
+// Only the agency-level WhatsApp (Meta Cloud API) sender config is still YAML-based -- there's
 // exactly one of it, same shared-credential reasoning as agency.meta_ads
 // (docs/secrets.md). Per-client thresholds/WhatsApp recipients moved to
 // the database (sql/018_client_notifications.sql) and are edited directly
 // on each client's row below now, not read-only here.
-function readWhatsappConfig(): { account_sid?: string; from_number?: string } | null {
+function readWhatsappConfig(): { phone_number_id?: string; display_number?: string; alert_template?: string; report_template?: string } | null {
   const filePath = path.join(CONFIG_DIR, "whatsapp.yaml");
   if (!fs.existsSync(filePath)) return null;
   return loadYaml(fs.readFileSync(filePath, "utf8")) as Record<string, string>;
@@ -44,10 +44,12 @@ export default async function AdminSettingsPage() {
 
       {!readError && (
         <div className="rounded-lg border border-zinc-800 p-4">
-          {whatsapp?.account_sid ? (
+          {whatsapp?.phone_number_id ? (
             <ul className="space-y-1 text-sm text-zinc-400">
-              <li>account_sid: <span className="font-mono text-zinc-300">{whatsapp.account_sid}</span></li>
-              <li>from_number: <span className="font-mono text-zinc-300">{whatsapp.from_number}</span></li>
+              <li>number: <span className="font-mono text-zinc-300">{whatsapp.display_number || "—"}</span></li>
+              <li>phone_number_id: <span className="font-mono text-zinc-300">{whatsapp.phone_number_id}</span></li>
+              <li>alert template: <span className="font-mono text-zinc-300">{whatsapp.alert_template}</span></li>
+              <li>report template: <span className="font-mono text-zinc-300">{whatsapp.report_template}</span></li>
             </ul>
           ) : (
             <p className="text-sm text-zinc-500">Not configured yet -- see docs/notifications.md.</p>

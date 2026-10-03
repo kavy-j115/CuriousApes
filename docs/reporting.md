@@ -97,7 +97,7 @@ than crashing if the storage credentials are missing.
 
 ## DHR (Daily/Weekly/Monthly over WhatsApp)
 
-`src/reports/dhr.py` sends the same Business Health Report over WhatsApp
+The WhatsApp report (see docs/notifications.md; formerly `src/reports/dhr.py`) sends the Business Health Report as a PNG
 instead of (or alongside) the on-demand download — see docs/notifications.md
 for the WhatsApp/Twilio side. Reuses `generate_report()` unchanged: a
 "weekly" or "monthly" DHR is just that same function given a wider range

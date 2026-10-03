@@ -29,7 +29,7 @@ def _store_today(conn, client_id: str):
     return row[0]
 
 
-def generate_summaries(conn, client_id, display_name, supabase_url, service_role_key, columns=None, roas_thresholds=None) -> list[str]:
+def generate_summaries(conn, client_id, display_name, supabase_url, service_role_key, report_config=None) -> list[str]:
     """Returns one status string per window. 'skipped' (no data yet) is
     not an error; an upload failure raises."""
     if not supabase_url or not service_role_key:
@@ -52,7 +52,7 @@ def generate_summaries(conn, client_id, display_name, supabase_url, service_role
             statuses.append(f"{name}: skipped (no data in the last {days} days)")
             continue
         path = out_dir / f"{name}.xlsx"
-        generate_report(rows, f"{display_name} -- last {days} days", str(path), columns, roas_thresholds)
+        generate_report(rows, f"{display_name} -- last {days} days", str(path), report_config)
         upload_file(str(path), f"{client_id}/summary/{name}.xlsx", supabase_url, service_role_key)
         statuses.append(f"{name}: {len(rows)} days uploaded")
     return statuses

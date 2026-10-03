@@ -45,13 +45,7 @@ def send_pending_alerts(conn, client_id: str, recipients: list[str], whatsapp_co
         all_ok = True
         for phone in recipients:
             try:
-                send_whatsapp_alert(
-                    whatsapp_config["account_sid"],
-                    whatsapp_config["auth_token"],
-                    whatsapp_config["from_number"],
-                    phone,
-                    f"[{client_id}] {message}",
-                )
+                send_whatsapp_alert(whatsapp_config, phone, f"[{client_id}] {message}")
             except Exception as e:
                 all_ok = False
                 errors.append((alert_type, str(e)))

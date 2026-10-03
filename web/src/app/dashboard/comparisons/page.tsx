@@ -7,7 +7,7 @@ import CompareView from "@/app/CompareView";
 import MetricsCharts from "@/app/MetricsCharts";
 
 function ReportMiniTable({ rows, reportConfig }: { rows: ReportRow[]; reportConfig: ReportConfig }) {
-  const columns = resolveReportColumns(reportConfig);
+  const columns = resolveReportColumns(reportConfig, rows);
   return (
     <div>
       <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
@@ -23,7 +23,7 @@ function ReportMiniTable({ rows, reportConfig }: { rows: ReportRow[]; reportConf
             {rows.map((row) => (
               <tr key={row.report_date} className="border-b border-zinc-900 text-zinc-300">
                 {columns.map((c) => (
-                  <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
+                  <td key={c.key} style={c.cellStyle?.(row)} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
                 ))}
               </tr>
             ))}

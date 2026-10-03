@@ -23,7 +23,6 @@ export default async function DashboardHomePage({
 
   const selectedClient = await resolveSelectedClient(client, clients ?? []);
   const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
-  const reportColumns = resolveReportColumns(reportConfig);
 
   if (!selectedClient) {
     return <p className="text-sm text-zinc-500">No client assigned to your account yet.</p>;
@@ -62,6 +61,9 @@ export default async function DashboardHomePage({
   const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
   const currentRows = rows.filter((r) => r.report_date >= since30);
   const previousRows = rows.filter((r) => r.report_date < since30);
+
+  const tableRows = rows.slice(0, 10);
+  const reportColumns = resolveReportColumns(reportConfig, tableRows);
 
   const current = computeTotal(currentRows);
   const previous = computeTotal(previousRows);
@@ -136,10 +138,10 @@ export default async function DashboardHomePage({
                 </tr>
               </thead>
               <tbody>
-                {rows.slice(0, 10).map((row) => (
+                {tableRows.map((row) => (
                   <tr key={row.report_date} className="border-b border-zinc-900 text-zinc-300">
                     {reportColumns.map((c) => (
-                      <td key={c.key} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
+                      <td key={c.key} style={c.cellStyle?.(row)} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
                     ))}
                   </tr>
                 ))}

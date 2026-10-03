@@ -25,18 +25,19 @@ AVAILABLE_METRICS: dict[str, tuple[str, str]] = {
     "checkout_pct": ("Checkout %", "0.0%"),
     "mtd_sale": ("MTD Sale", "#,##0.00"),
     "lmtd_sale": ("LMTD", "#,##0.00"),
+    # Same running totals but on Total sales, for clients whose report
+    # headlines Total sales instead of Gross sales (e.g. "LMTD Total Sale").
+    "mtd_total_sales": ("MTD Sale", "#,##0.00"),
+    "lmtd_total_sales": ("LMTD Total Sale", "#,##0.00"),
 }
 
 # What every client gets unless report_config overrides it -- net_revenue
 # left out (opt-in per client), matching the TS DEFAULT_METRIC_KEYS exactly.
 DEFAULT_METRIC_KEYS = [
-    "sessions", "add_to_carts", "order_count", "gross_revenue", "total_sales", "aov",
+    "sessions", "add_to_carts", "order_count", "gross_revenue", "aov",
     "amount_spent", "purchase_value", "proas", "atc_pct", "conversion_pct",
     "checkout_pct", "mtd_sale", "lmtd_sale",
 ]
-
-DEFAULT_ROAS_THRESHOLDS = {"good": 3, "danger": 1.5}
-
 
 def resolve_columns(report_config: dict | None) -> list[tuple[str, str, str]]:
     """Returns (label, db_column, number_format) tuples, "Day" always
@@ -59,7 +60,16 @@ def resolve_columns(report_config: dict | None) -> list[tuple[str, str, str]]:
     return [day_column] + metric_columns
 
 
-def resolve_roas_thresholds(report_config: dict | None) -> dict:
-    if report_config and report_config.get("roasThresholds"):
-        return report_config["roasThresholds"]
-    return DEFAULT_ROAS_THRESHOLDS
+DEFAULT_HEADER_COLOR = "4472C4"
+
+
+def resolve_derived_columns(report_config: dict | None) -> list[dict]:
+    """The client's extra computed columns ({key, label, formula, isPct}),
+    appended after the metric columns -- same as the web Reports page."""
+    return list((report_config or {}).get("derivedColumns") or [])
+
+
+def resolve_header_color(report_config: dict | None) -> str:
+    """Per-client header fill (hex, no #) -- each brand's report has its own."""
+    color = ((report_config or {}).get("headerColor") or "").lstrip("#")
+    return color if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color) else DEFAULT_HEADER_COLOR

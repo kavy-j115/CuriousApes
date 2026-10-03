@@ -27,10 +27,10 @@ import psycopg2.extras
 from src.config.clients import load_all, get_value, resolve_secret
 from src.config.whatsapp_config import load_whatsapp_config
 from src.config.report_config import load_report_config
-from src.reports.report_columns import resolve_columns, resolve_roas_thresholds
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
 from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
+from src.ingestion.shopify_analytics import sync_shopify_analytics
 from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
 from src.reports.storage import ensure_bucket_exists, upload_report
@@ -38,7 +38,7 @@ from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_fai
 from src.analytics.data_quality import run_data_quality_checks
 from src.analytics.anomaly import check_anomalies
 from src.notifications.dispatch import send_pending_alerts
-from src.reports.dhr import generate_and_send_dhr
+from src.reports.whatsapp_reports import render_and_store_views, push_daily_report
 from src.reports.summaries import generate_summaries
 
 load_dotenv()
@@ -71,6 +71,23 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
         except Exception as e:
             results.append(StepResult("Shopify sync", "error", str(e)))
             results.append(StepResult("Shopify transform", "skipped", "sync failed"))
+
+        # Shopify's own daily numbers (the same ones its Analytics page shows) --
+        # these win over the order-derived figures for every day they cover.
+        # Sessions come from Shopify only for clients without their own GA4.
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;", (client_id,))
+            row = cur.fetchone()
+            cur.close()
+            store_today = (row[0] if row else date.today()).isoformat()
+            sales_days, session_days = sync_shopify_analytics(
+                conn, client_id, store_domain, shopify_token, since, store_today,
+                include_sessions=not get_value(config, "ga4", "property_id"),
+            )
+            results.append(StepResult("Shopify analytics", "ok", f"{sales_days} sales days, {session_days} session days"))
+        except Exception as e:
+            results.append(StepResult("Shopify analytics", "error", str(e)))
     else:
         results.append(StepResult("Shopify sync", "skipped", "not configured for this client"))
 
@@ -110,20 +127,37 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     # -- resolved once here and reused for both the on-demand Excel report
     # below and the DHR WhatsApp send further down, so both match the web.
     report_config = load_report_config(conn, client_id)
-    report_columns = resolve_columns(report_config)
-    roas_thresholds = resolve_roas_thresholds(report_config)
 
     rows: list[dict] = []
+    trend_rows: list[dict] = []
     try:
+        # The daily report is month-to-date: every day from the 1st of the
+        # store's current month, so it accumulates a row per day through the
+        # month with a Total row for the month so far.
+        month_cur = conn.cursor()
+        month_cur.execute(
+            "SELECT date_trunc('month', now() AT TIME ZONE timezone)::date, (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;",
+            (client_id,),
+        )
+        month_start, store_today_date = month_cur.fetchone()
+        month_cur.close()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
             "SELECT * FROM daily_report_metrics WHERE client_id = %s AND report_date >= %s ORDER BY report_date;",
-            (client_id, since),
+            (client_id, month_start),
         )
         rows = cur.fetchall()
+        # Alerts and anomaly detection compare today against recent days, which
+        # must not shrink on the 1st of the month -- they get their own
+        # trailing 30-day window, independent of the month-to-date report.
+        cur.execute(
+            "SELECT * FROM daily_report_metrics WHERE client_id = %s AND report_date >= %s ORDER BY report_date;",
+            (client_id, store_today_date - timedelta(days=30)),
+        )
+        trend_rows = cur.fetchall()
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = OUTPUT_DIR / f"{client_id}_business_health_report.xlsx"
-        generate_report(rows, config.get("display_name", client_id), str(output_path), report_columns, roas_thresholds)
+        generate_report(rows, config.get("display_name", client_id), str(output_path), report_config)
         results.append(StepResult("Report", "ok", f"{len(rows)} rows -> {output_path.name}"))
 
         if supabase_url and service_role_key:
@@ -143,7 +177,7 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     try:
         summary_status = generate_summaries(
             conn, client_id, config.get("display_name", client_id), supabase_url, service_role_key,
-            report_columns, roas_thresholds,
+            report_config,
         )
         results.append(StepResult("Summaries", "skipped" if summary_status[0].startswith("skipped") else "ok", "; ".join(summary_status)))
     except Exception as e:
@@ -166,7 +200,7 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     # history, so it's silent (not a false "nothing found") until that
     # history exists for this client.
     try:
-        anomaly_alerts = check_anomalies(rows)
+        anomaly_alerts = check_anomalies(trend_rows)
         if anomaly_alerts:
             save_alerts(conn, client_id, date.today(), anomaly_alerts)
             results.append(StepResult("Anomaly detection", "ok", f"{len(anomaly_alerts)} anomaly(ies) found"))
@@ -178,10 +212,10 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     thresholds = get_value(config, "thresholds") or {}
     if not thresholds:
         results.append(StepResult("Alerts", "skipped", "no thresholds configured for this client"))
-    elif len(rows) < 2:
+    elif len(trend_rows) < 2:
         results.append(StepResult("Alerts", "skipped", "insufficient history (need at least 2 days)"))
     else:
-        today_row, yesterday_row = dict(rows[-1]), dict(rows[-2])
+        today_row, yesterday_row = dict(trend_rows[-1]), dict(trend_rows[-2])
         # Merges in the accurate CAC denominator (new customers that day)
         # from daily_new_vs_returning (sql/019_new_vs_returning.sql) --
         # daily_report_metrics itself doesn't have this column, so
@@ -222,27 +256,30 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
         if sent_count or not send_errors:
             results.append(StepResult("WhatsApp notify", "ok", f"{sent_count} alert(s) sent to {len(recipients)} recipient(s)"))
 
-    # DHR: always attempts "daily"; "weekly" additionally fires on Mondays,
-    # "monthly" additionally fires on the 1st -- one daily cron trigger
-    # covers all three cadences instead of needing separate schedules.
-    if whatsapp_config:
-        dhr_periods = ["daily"]
-        if date.today().weekday() == 0:
-            dhr_periods.append("weekly")
-        if date.today().day == 1:
-            dhr_periods.append("monthly")
-        for period in dhr_periods:
-            try:
-                status = generate_and_send_dhr(
-                    conn, client_id, config.get("display_name", client_id), period,
-                    recipients, whatsapp_config, supabase_url, service_role_key,
-                    report_columns, roas_thresholds,
-                )
-                results.append(StepResult(f"DHR ({period})", "ok" if status.startswith("sent") else "skipped", status))
-            except Exception as e:
-                results.append(StepResult(f"DHR ({period})", "error", str(e)))
+    # Report pictures: rendered every run (the WhatsApp bot replies from them),
+    # and the month-to-date one is pushed to the client's registered numbers.
+    if not supabase_url or not service_role_key:
+        results.append(StepResult("Report images", "skipped", "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set"))
     else:
-        results.append(StepResult("DHR", "skipped", "config/whatsapp.yaml not set up"))
+        display_name = config.get("display_name", client_id)
+        try:
+            views = render_and_store_views(conn, client_id, display_name, report_config, supabase_url, service_role_key)
+            results.append(StepResult("Report images", "ok" if views else "skipped", ", ".join(views) or "no data yet"))
+        except Exception as e:
+            views = []
+            results.append(StepResult("Report images", "error", str(e)))
+        if "mtd" not in views:
+            results.append(StepResult("WhatsApp daily report", "skipped", "no report image"))
+        elif not whatsapp_config:
+            results.append(StepResult("WhatsApp daily report", "skipped", "config/whatsapp.yaml not set up"))
+        elif not recipients:
+            results.append(StepResult("WhatsApp daily report", "skipped", "no whatsapp_recipients for this client"))
+        else:
+            sent, send_errors = push_daily_report(client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key)
+            for err in send_errors:
+                results.append(StepResult("WhatsApp daily report", "error", err))
+            if sent:
+                results.append(StepResult("WhatsApp daily report", "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
 
     return results
 

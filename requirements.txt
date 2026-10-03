@@ -27,3 +27,4 @@ phonenumbers==9.0.40
 # 'proxies' kwarg httpx removed. Upgraded to current stable instead of
 # pinning httpx backwards.
 anthropic==1.9.0
+Pillow>=10.1  # PNG report images for WhatsApp

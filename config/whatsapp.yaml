@@ -1,33 +1,21 @@
-# The agency's one shared WhatsApp sender, via Twilio -- used for every
-# client's alerts, same reasoning as agency.meta_ads.access_token in
-# docs/secrets.md. This file is committed (from_number isn't secret --
-# useless without the Vault-stored values below); account_sid and the
-# auth token both live in Supabase Vault, set with:
-#   venv/Scripts/python scripts/set_vault_secret.py agency.whatsapp.account_sid
-#   venv/Scripts/python scripts/set_vault_secret.py agency.whatsapp.auth_token
+# The agency's one shared WhatsApp sender: Meta WhatsApp Cloud API with the
+# company's own number. Committed file -- nothing here is secret on its own
+# (phone_number_id is useless without the token); the access token lives in
+# Supabase Vault:
+#   venv/Scripts/python scripts/set_vault_secret.py agency.whatsapp.access_token
 #
-# account_sid moved to Vault alongside the auth token even though Twilio's
-# own docs say it isn't actually sensitive (unlike the Auth Token) --
-# GitHub's push-protection secret scanner flags it anyway by pattern (it
-# looks like a key), which blocked a push. Simpler to keep everything
-# shaped like a credential in Vault, no exceptions, than to argue with a
-# scanner or ask for a bypass click every time this file changes.
+# Fill in after Meta setup (see docs/notifications.md):
+#   phone_number_id  WhatsApp Manager -> API Setup -> "Phone number ID"
+#   display_number   the number itself, for display on the Settings page
+#   alert_template   approved template, ONE body variable {{1}} (alert text)
+#   report_template  approved template, IMAGE header + ONE body variable {{1}} caption
 #
-# Setup (twilio.com console):
-# 1. Sign up / log in, copy the Account SID from the console dashboard
-#    into Vault via the command above.
-# 2. Messaging -> Try it out -> Send a WhatsApp message gives a Sandbox
-#    number (usually +14155238886) and a join code. Put the sandbox number
-#    in from_number below. Each recipient must WhatsApp that join code to
-#    the sandbox number once before they can receive messages from it --
-#    a sandbox-only requirement, not needed once a real approved WhatsApp
-#    sender replaces the sandbox.
-# 3. Copy the Auth Token (console dashboard, next to Account SID) into
-#    Vault via the second command above.
-#
-# Leave from_number blank to leave WhatsApp alerts disabled -- the
-# pipeline skips sending (not an error) until this is filled in.
+# Leave phone_number_id blank to keep WhatsApp disabled -- the pipeline
+# skips sending (not an error).
 
-account_sid_secret: agency.whatsapp.account_sid
-auth_token_secret: agency.whatsapp.auth_token
-from_number: "+17372508034"
+phone_number_id: "1360522473811610"
+display_number: ""
+access_token_secret: agency.whatsapp.access_token
+alert_template: alert_notification
+report_template: daily_report_image
+template_language: en

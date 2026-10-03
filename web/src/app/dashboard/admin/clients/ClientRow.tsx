@@ -16,7 +16,7 @@ import {
   grantTemporaryAccess,
   revokeAccess,
 } from "../actions";
-import { AVAILABLE_METRICS, ALL_METRIC_KEYS, defaultLabel, DEFAULT_ROAS_THRESHOLDS, type MetricKey, type ReportConfig, type DerivedColumn } from "@/lib/reportColumns";
+import { AVAILABLE_METRICS, ALL_METRIC_KEYS, defaultLabel, type MetricKey, type ReportConfig, type DerivedColumn } from "@/lib/reportColumns";
 import { validateFormula } from "@/lib/formulaEval";
 
 type AlertThresholds = { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null;
@@ -61,12 +61,7 @@ export default function ClientRow({
   const [labels, setLabels] = useState<Record<string, string>>(
     Object.fromEntries((client.report_config?.columns ?? []).map((c) => [c.key, c.label]))
   );
-  const [goodThreshold, setGoodThreshold] = useState(
-    String(client.report_config?.roasThresholds?.good ?? DEFAULT_ROAS_THRESHOLDS.good)
-  );
-  const [dangerThreshold, setDangerThreshold] = useState(
-    String(client.report_config?.roasThresholds?.danger ?? DEFAULT_ROAS_THRESHOLDS.danger)
-  );
+  const [headerColor, setHeaderColor] = useState(client.report_config?.headerColor ? `#${client.report_config.headerColor.replace(/^#/, "")}` : "");
   const [derivedColumns, setDerivedColumns] = useState<DerivedColumn[]>(client.report_config?.derivedColumns ?? []);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [revenuePct, setRevenuePct] = useState(String(client.alert_thresholds?.revenue_change_pct ?? ""));
@@ -126,12 +121,10 @@ export default function ClientRow({
 
   function saveColumns() {
     startTransition(async () => {
-      const good = Number(goodThreshold) || DEFAULT_ROAS_THRESHOLDS.good;
-      const danger = Number(dangerThreshold) || DEFAULT_ROAS_THRESHOLDS.danger;
-      const thresholdsChanged = good !== DEFAULT_ROAS_THRESHOLDS.good || danger !== DEFAULT_ROAS_THRESHOLDS.danger;
+      const color = /^#[0-9a-fA-F]{6}$/.test(headerColor) ? headerColor.slice(1) : undefined;
       const validDerived = derivedColumns.filter((dc) => dc.key.trim() && dc.label.trim() && dc.formula.trim() && !formulaError(derivedColumns.indexOf(dc)));
 
-      if (useDefault && !thresholdsChanged && validDerived.length === 0) {
+      if (useDefault && !color && validDerived.length === 0) {
         await updateClientReportConfig(client.client_id, null);
         return;
       }
@@ -144,8 +137,8 @@ export default function ClientRow({
           }));
       await updateClientReportConfig(client.client_id, {
         columns,
-        roasThresholds: { good, danger },
         derivedColumns: validDerived.length > 0 ? validDerived : undefined,
+        headerColor: color,
       });
     });
   }
@@ -284,22 +277,18 @@ export default function ClientRow({
             <Checkbox className="mb-3" checked={useDefault} onChange={setUseDefault} label="Use default report configuration" />
 
             <div className="mb-3 flex items-center gap-2 text-xs text-zinc-300">
-              <span className="text-zinc-400">PROAS good ≥</span>
+              <span className="text-zinc-400">Header color</span>
               <input
-                type="number"
-                step="0.1"
-                value={goodThreshold}
-                onChange={(e) => setGoodThreshold(e.target.value)}
-                className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100"
+                type="color"
+                value={headerColor || "#4472c4"}
+                onChange={(e) => setHeaderColor(e.target.value)}
+                className="h-7 w-10 cursor-pointer rounded border border-zinc-800 bg-zinc-950"
               />
-              <span className="text-zinc-400">danger &lt;</span>
-              <input
-                type="number"
-                step="0.1"
-                value={dangerThreshold}
-                onChange={(e) => setDangerThreshold(e.target.value)}
-                className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100"
-              />
+              {headerColor && (
+                <button onClick={() => setHeaderColor("")} className="text-zinc-500 hover:text-zinc-300">
+                  reset
+                </button>
+              )}
             </div>
 
             {!useDefault && (
@@ -342,6 +331,12 @@ export default function ClientRow({
                         onChange={(e) => updateDerivedColumn(i, { formula: e.target.value })}
                         className={`flex-1 min-w-48 rounded border bg-zinc-950 px-2 py-1 text-xs text-zinc-100 ${error ? "border-status-bad" : "border-zinc-800"}`}
                       />
+                      <Select value={dc.after ?? ""} onChange={(v) => updateDerivedColumn(i, { after: (v || undefined) as MetricKey | undefined })}>
+                        <option value="">At the end</option>
+                        {AVAILABLE_METRICS.map((m) => (
+                          <option key={m.key} value={m.key}>After {defaultLabel(m.key)}</option>
+                        ))}
+                      </Select>
                       <Checkbox checked={dc.isPct} onChange={(v) => updateDerivedColumn(i, { isPct: v })} label="%" />
                       <button onClick={() => removeDerivedColumn(i)} className="text-xs text-zinc-500 hover:text-status-bad">
                         remove

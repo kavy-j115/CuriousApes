@@ -40,12 +40,15 @@ def ensure_bucket_exists(project_url: str, service_role_key: str) -> None:
         response.raise_for_status()
 
 
-def upload_file(local_path: str, storage_path: str, project_url: str, service_role_key: str) -> str:
+def upload_file(
+    local_path: str, storage_path: str, project_url: str, service_role_key: str,
+    content_type: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+) -> str:
     """Uploads local_path to the given storage_path, overwriting any
     existing file there. The generic primitive behind upload_report() and
-    the DHR sender (src/reports/dhr.py) -- kept separate from
-    upload_report() so DHR files can live under their own
-    <client_id>/dhr/ prefix without upload_report()'s client_id parameter
+    the WhatsApp report images (src/reports/whatsapp_reports.py) -- kept separate from
+    upload_report() so those files can live under their own
+    <client_id>/png/ prefix without upload_report()'s client_id parameter
     meaning two different things in two different callers."""
     with open(local_path, "rb") as f:
         response = requests.put(
@@ -53,7 +56,7 @@ def upload_file(local_path: str, storage_path: str, project_url: str, service_ro
             headers={
                 "Authorization": f"Bearer {service_role_key}",
                 "apikey": service_role_key,
-                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Content-Type": content_type,
                 "x-upsert": "true",  # overwrite rather than error if the path already exists
             },
             data=f,
@@ -73,8 +76,8 @@ def upload_report(local_path: str, client_id: str, project_url: str, service_rol
 
 def create_signed_url(project_url: str, service_role_key: str, storage_path: str, expires_in: int = 3600) -> str:
     """Returns a time-limited URL for a file in the private 'reports'
-    bucket. Needed because Twilio has to fetch the file itself over plain
-    HTTP to attach it to a WhatsApp message (src/reports/dhr.py) -- the
+    bucket. Needed because the recipient opens the report through this link
+    in a WhatsApp message -- the
     bucket stays private for every other access path, so this is the one
     deliberate, short-lived exception rather than making the whole bucket
     public."""

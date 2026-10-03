@@ -18,7 +18,7 @@ export function shopifyEnv(): { clientId: string; scopes: string; siteUrl: strin
   return {
     clientId,
     siteUrl: siteUrl.replace(/\/+$/, ""),
-    scopes: process.env.SHOPIFY_SCOPES ?? "read_orders,read_customers,read_products",
+    scopes: process.env.SHOPIFY_SCOPES ?? "read_orders,read_customers,read_products,read_reports",
   };
 }
 

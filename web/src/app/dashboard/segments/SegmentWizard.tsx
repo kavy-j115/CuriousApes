@@ -21,6 +21,7 @@ import {
   parseTemplateHeaders,
   guessField,
   buildOutput,
+  buildListCsv,
   OUTPUT_FIELDS,
   type ExportRow,
   type ExportShape,
@@ -157,15 +158,24 @@ export default function SegmentWizard() {
     setMapping(headers.map(guessField));
   }
 
-  function download() {
-    if (!output) return;
-    const blob = new Blob([output.csv], { type: "text/csv" });
+  function saveCsv(csv: string, filename: string) {
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${kind}_segment.csv`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function download() {
+    if (!output) return;
+    saveCsv(output.csv, `${kind}_segment.csv`);
+  }
+
+  // Straight from the segment step: the whole list, no output template needed.
+  function downloadList() {
+    saveCsv(buildListCsv(segment), `${kind}_segment_list.csv`);
   }
 
   const fields = file?.shape === "customers" ? CUSTOMER_FRIENDLY_FIELDS : ORDER_FRIENDLY_FIELDS;
@@ -270,6 +280,14 @@ export default function SegmentWizard() {
         <div className="mt-5 flex items-center gap-4">
           <button onClick={() => goTo(3)} disabled={segment.length === 0} className={primaryButton}>
             Continue
+          </button>
+          <button
+            onClick={downloadList}
+            disabled={segment.length === 0}
+            className="inline-flex items-center gap-2 rounded-md border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-accent hover:text-accent disabled:opacity-40"
+          >
+            <Download size={14} />
+            Download list
           </button>
           <span className="text-sm text-zinc-400">
             <span className="font-medium tabular-nums text-zinc-100">{count(segment.length, "customer")}</span> {segment.length === 1 ? "matches" : "match"}

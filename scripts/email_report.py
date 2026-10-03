@@ -26,7 +26,7 @@ import psycopg2.extras
 from src.config.report_config import load_report_config
 from src.notifications.email import build_summary, load_email_config, send_report_email
 from src.reports.business_health_report import generate_report
-from src.reports.report_columns import resolve_columns, resolve_roas_thresholds
+from src.reports.report_columns import resolve_columns
 
 load_dotenv()
 
@@ -63,7 +63,7 @@ def main():
     columns = resolve_columns(report_config)
     out_dir = Path(tempfile.mkdtemp(prefix="email_report_"))
     xlsx = out_dir / f"{args.client}_business_health_report.xlsx"
-    generate_report(rows, client["display_name"], str(xlsx), columns, resolve_roas_thresholds(report_config))
+    generate_report(rows, client["display_name"], str(xlsx), report_config)
 
     html_body, text_body = build_summary(rows, columns, client["display_name"])
     subject = f"{client['display_name']} - Business Health Report"
