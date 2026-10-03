@@ -32,15 +32,35 @@ const digits = (s: string) => s.replace(/\D/g, "");
 
 type Brand = { client_id: string; display_name: string };
 
+// Brands this number may see: clients that list it as a WhatsApp number, plus --
+// for an agency person's number -- every client (admin) or their assigned
+// clients (user; 24-hour collab access counts while it lasts).
 async function brandsForNumber(from: string): Promise<Brand[]> {
-  const { data } = await getAdminClient()
-    .from("clients")
-    .select("client_id, display_name, whatsapp_recipients")
-    .not("whatsapp_recipients", "eq", "{}");
+  const admin = getAdminClient();
   const wanted = digits(from);
-  return (data ?? [])
-    .filter((c) => ((c.whatsapp_recipients as string[]) ?? []).some((p) => digits(p) === wanted))
-    .map((c) => ({ client_id: c.client_id as string, display_name: c.display_name as string }));
+  const found = new Map<string, Brand>();
+  const add = (c: { client_id: unknown; display_name: unknown }) =>
+    found.set(c.client_id as string, { client_id: c.client_id as string, display_name: c.display_name as string });
+
+  const { data: clients } = await admin.from("clients").select("client_id, display_name, whatsapp_recipients");
+  for (const c of clients ?? []) {
+    if (((c.whatsapp_recipients as string[]) ?? []).some((p) => digits(p) === wanted)) add(c);
+  }
+
+  const { data: staff } = await admin.from("user_profiles").select("id, role, phone").in("role", ["admin", "user"]).not("phone", "is", null);
+  const person = (staff ?? []).find((s) => digits(s.phone as string) === wanted);
+  if (person?.role === "admin") {
+    for (const c of clients ?? []) add(c);
+  } else if (person) {
+    const { data: access } = await admin.from("client_access").select("client_id, expires_at").eq("user_id", person.id);
+    const now = Date.now();
+    const allowed = new Set(
+      (access ?? []).filter((a) => !a.expires_at || new Date(a.expires_at as string).getTime() > now).map((a) => a.client_id as string),
+    );
+    for (const c of clients ?? []) if (allowed.has(c.client_id as string)) add(c);
+  }
+
+  return [...found.values()].sort((a, b) => a.display_name.localeCompare(b.display_name));
 }
 
 function pickView(text: string): string {
@@ -92,7 +112,7 @@ export async function handleIncoming(from: string, rawText: string): Promise<voi
 
     const isGreeting = /^(hi|hello|hey|help|menu|start)\b/.test(text);
     if (isGreeting) {
-      await sendText(from, `Hi! This is the ${brand.display_name} reports bot. ${HELP}`);
+      await sendText(from, `Welcome to ${brand.display_name}! ${HELP}`);
       return;
     }
 

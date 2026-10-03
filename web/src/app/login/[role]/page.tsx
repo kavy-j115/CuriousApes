@@ -68,7 +68,7 @@ export default async function RoleLoginPage({
               <input type="checkbox" name="remember" className="rounded border-zinc-700 bg-zinc-950" />
               Remember me
             </label>
-            <span>Forgot password?</span>
+            <span>Forgot your password? Ask an admin to reset it.</span>
           </div>
 
           <button

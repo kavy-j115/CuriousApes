@@ -12,7 +12,7 @@ export default async function AdminUsersPage() {
   const [{ data: clients }, { data: profiles }, { data: access }] = await Promise.all([
     supabase.from("clients").select("client_id, display_name").order("display_name"),
     // Agency people only -- client logins are created and shown on the Clients page.
-    supabase.from("user_profiles").select("id, email, display_name, role").in("role", ["admin", "user"]).order("created_at"),
+    supabase.from("user_profiles").select("id, email, display_name, role, phone").in("role", ["admin", "user"]).order("created_at"),
     supabase.from("client_access").select("user_id, client_id, expires_at"),
   ]);
 
@@ -28,14 +28,9 @@ export default async function AdminUsersPage() {
     email: p.email as string | null,
     display_name: p.display_name as string | null,
     role: p.role as Role,
+    phone: (p.phone as string | null) ?? "",
     access: accessByUser.get(p.id as string) ?? [],
   }));
-
-  // Other agency users (role "user") who have permanent clients -- the people
-  // you can "collab with". Client accounts aren't part of the agency.
-  const collabCandidates = users
-    .filter((u) => u.role === "user" && u.access.some((a) => !a.expires_at))
-    .map((u) => ({ id: u.id, label: u.display_name || u.email || u.id }));
 
   return (
     <div className="max-w-3xl">
@@ -43,9 +38,9 @@ export default async function AdminUsersPage() {
 
       <CreateUserForm clients={clients ?? []} />
 
-      <div className="flex flex-col gap-3">
+      <div data-tour="user-list" className="flex flex-col gap-3">
         {users.map((u) => (
-          <UserRow key={u.id} user={u} clients={clients ?? []} collabCandidates={collabCandidates} currentUserId={profile.id} />
+          <UserRow key={u.id} user={u} clients={clients ?? []} currentUserId={profile.id} />
         ))}
         {users.length === 0 && <p className="text-sm text-zinc-500">No users yet.</p>}
       </div>

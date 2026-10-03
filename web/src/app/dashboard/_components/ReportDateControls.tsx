@@ -10,6 +10,10 @@ function isoDaysAgo(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function monthStart(): string {
+  return `${isoDaysAgo(0).slice(0, 8)}01`;
+}
+
 const PRESETS: { label: string; from: () => string; to: () => string }[] = [
   { label: "Today", from: () => isoDaysAgo(0), to: () => isoDaysAgo(0) },
   { label: "7D", from: () => isoDaysAgo(6), to: () => isoDaysAgo(0) },
@@ -21,7 +25,7 @@ const PRESETS: { label: string; from: () => string; to: () => string }[] = [
 // handles the date range -- copies the existing searchParams forward
 // (preserving `client`, `view`, etc.) rather than rebuilding the query
 // string from scratch.
-export default function ReportDateControls() {
+export default function ReportDateControls({ defaultRange = "month" }: { defaultRange?: "month" | "30d" }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -29,7 +33,12 @@ export default function ReportDateControls() {
 
   const from = searchParams.get("from") ?? "";
   const to = searchParams.get("to") ?? "";
-  const activePreset = PRESETS.find((p) => p.from() === from && p.to() === to)?.label ?? null;
+  // With nothing in the URL the page shows its default range -- this month on
+  // Reports, the last 30 days on the dashboard -- so that button reads as active.
+  const activePreset =
+    PRESETS.find((p) => p.from() === from && p.to() === to)?.label ?? (!from && !to && defaultRange === "30d" ? "30D" : null);
+  // No range in the URL = the default "this month so far" view.
+  const isThisMonth = !from && !to && defaultRange === "month";
 
   function navigate(next: { from?: string; to?: string }) {
     const params = new URLSearchParams(searchParams.toString());
@@ -48,6 +57,17 @@ export default function ReportDateControls() {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex flex-wrap items-center gap-1 rounded-full bg-zinc-900 p-1">
+        <button
+          onClick={() => {
+            setCustomOpen(false);
+            navigate({ from: monthStart(), to: isoDaysAgo(0) });
+          }}
+          className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+            (isThisMonth || (from === monthStart() && to === isoDaysAgo(0))) && !customOpen ? "bg-accent text-white" : "text-zinc-400 hover:text-zinc-100"
+          }`}
+        >
+          This month
+        </button>
         {PRESETS.map((p) => (
           <button
             key={p.label}

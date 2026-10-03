@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { markTourSeen } from "../tourActions";
 import type { Role } from "@/lib/auth/profile";
 
@@ -8,7 +9,7 @@ type Step = { target?: string; title: string; body: string };
 
 const DASHBOARD_STEPS: Record<string, Step> = {
   dashboard: { target: "nav-Dashboard", title: "Dashboard", body: "Revenue, orders, customers and trends for the last 30 days." },
-  reports: { target: "nav-Reports", title: "Reports", body: "Daily numbers for any date range, as a table or chart. Download the Excel report from here." },
+  reports: { target: "nav-Reports", title: "Reports", body: "Daily numbers for this month or any date range, as a table or chart. Download the Excel report from here." },
   comparisons: { target: "nav-Comparisons", title: "Comparisons", body: "Put two date ranges side by side." },
   alerts: { target: "nav-Alerts", title: "Alerts", body: "Drops in revenue or ROAS, rising CAC, sync failures and data issues." },
   ai: { target: "nav-AI Report", title: "AI Report", body: "A plain-language summary of each day's numbers." },
@@ -27,40 +28,119 @@ function stepsFor(role: Role): Step[] {
   steps.push(s.dashboard, s.reports, s.comparisons, s.alerts, s.ai);
   if (role !== "client") steps.push(s.segments, s.collab);
   if (role === "admin") steps.push(s.clients, s.users);
-  steps.push({ title: "You're set", body: "You can replay this tour any time from your profile menu." });
+  steps.push({ title: "You're set", body: "Every page also has its own tutorial: use the Tutorial button at the bottom of the sidebar." });
   return steps;
 }
 
+// One short walkthrough per page, keyed by pathname. Targets are data-tour
+// attributes on the page's own elements; a step whose target isn't on screen
+// is shown as a centered card instead.
+const PAGE_TOURS: Record<string, Step[]> = {
+  "/dashboard": [
+    { target: "dash-dates", title: "What you're looking at", body: "The client and date range are shown here. Pick 7D, 30D, 90D, This month or a custom range to change every number and chart below." },
+    { target: "dash-tiles", title: "Key numbers", body: "Gross sales, orders, AOV and customer counts for that range. The arrow compares with the same number of days just before it." },
+    { target: "dash-charts", title: "Trends", body: "Daily revenue, orders and ad performance over the same range." },
+  ],
+  "/dashboard/reports": [
+    { target: "report-views", title: "Table or chart", body: "Switch between the daily table and charts of the same days." },
+    { target: "report-dates", title: "Date range", body: "\"This month\" shows every day from the 1st up to today with a Total row. Pick Today, 7D, 30D, 90D or Custom to see a different range instead." },
+    { target: "report-download", title: "Download", body: "Downloads an Excel file of exactly what is on screen, in the same format." },
+    { target: "report-table", title: "The report", body: "One row per day and a Total row at the bottom. PROAS is coloured green when it reaches the client's ideal ROAS and fades towards red as it drops." },
+  ],
+  "/dashboard/comparisons": [
+    { target: "compare-controls", title: "Choose two periods", body: "Pick a preset or set the dates for Period A and Period B, then compare." },
+    { target: "compare-results", title: "Results", body: "Each metric side by side with the change between the periods, followed by charts and the daily rows for each." },
+  ],
+  "/dashboard/alerts": [
+    { target: "alerts-list", title: "Alerts", body: "Revenue or ROAS drops, rising CAC, sync failures and data issues for this client. Each one shows whether it was sent over WhatsApp." },
+  ],
+  "/dashboard/ai-report": [
+    { target: "ai-body", title: "AI Daily Report", body: "A plain-language summary of the day's numbers. Use the date picker to read an earlier day." },
+  ],
+  "/dashboard/segments": [
+    { target: "segment-wizard", title: "Build a customer list", body: "Four steps: upload a Shopify Orders or Customers export, choose the segment, optionally upload a template with the columns you want, then download the list." },
+  ],
+  "/dashboard/collab": [
+    { target: "collab-panel", title: "Share a client", body: "Pick one of your clients and a colleague to give them access for 24 hours. You can end it early from the list below." },
+  ],
+  "/dashboard/admin/clients": [
+    { target: "client-create", title: "Add a client", body: "Brand name, the client's login email, their Shopify, Meta and GA4 IDs, the ideal ROAS, alert limits and WhatsApp numbers. Syncing stays off until you switch it on." },
+    { target: "client-table", title: "Manage clients", body: "Each row has its report columns and colours, alerts and WhatsApp numbers, access, connections and the sync switch." },
+  ],
+  "/dashboard/admin/users": [
+    { target: "user-create", title: "Create a user", body: "Make an Admin or User account and choose which clients they can see." },
+    { target: "user-list", title: "Existing users", body: "Change a role, adjust client access, or give a colleague 24-hour access." },
+  ],
+  "/dashboard/admin/permissions": [
+    { title: "Permissions", body: "A read-only overview of who has which role and which clients they can see." },
+  ],
+  "/dashboard/admin/data-sources": [
+    { title: "Data Sources", body: "Shows which clients have Shopify, Meta and GA4 connected and when each last synced." },
+  ],
+  "/dashboard/admin/settings": [
+    { title: "System Settings", body: "The WhatsApp sender the platform uses for alerts and reports." },
+  ],
+};
+
 const CARD_WIDTH = 320;
 const PAD = 6;
+const seenKey = (path: string) => `tour-page:${path}`;
 
-// First-login walkthrough: dims the page, spotlights the real nav item or
-// control for each step, and explains it. Steps are built per role so a
-// client is never shown something they can't open. Targets are located via
-// data-tour attributes; if one isn't visible (e.g. the sidebar is hidden on
-// a phone) the step falls back to a centered card instead of pointing at
-// nothing.
+// Walkthrough that dims the page, spotlights a real element for each step and
+// explains it. Two kinds: the app tour (first login, or "Take the tour" in the
+// profile menu) and a tutorial for the page you are on (runs the first time you
+// open that page, and from the sidebar's Tutorial button any time after).
 export default function GuidedTour({ role, autoStart }: { role: Role; autoStart: boolean }) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(autoStart);
+  const [mode, setMode] = useState<"app" | "page">("app");
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
-  const steps = useMemo(() => stepsFor(role), [role]);
+  const steps = useMemo(() => (mode === "page" ? PAGE_TOURS[pathname] ?? stepsFor(role) : stepsFor(role)), [mode, pathname, role]);
   const step = steps[index];
 
   const finish = useCallback(() => {
     setOpen(false);
     setIndex(0);
-    void markTourSeen();
-  }, []);
+    if (mode === "app") void markTourSeen();
+    else {
+      try {
+        localStorage.setItem(seenKey(pathname), "1");
+      } catch {
+        // storage blocked -- the page tutorial just shows again next visit
+      }
+    }
+  }, [mode, pathname]);
 
   useEffect(() => {
-    function start() {
+    function start(e: Event) {
+      const kind = (e as CustomEvent<{ kind?: string }>).detail?.kind;
+      setMode(kind === "page" && PAGE_TOURS[pathname] ? "page" : "app");
       setIndex(0);
       setOpen(true);
     }
     window.addEventListener("start-tour", start);
     return () => window.removeEventListener("start-tour", start);
-  }, []);
+  }, [pathname]);
+
+  // First visit to a page: show its tutorial once (not while the first-login
+  // app tour is waiting to run).
+  useEffect(() => {
+    if (autoStart || !PAGE_TOURS[pathname]) return;
+    let seen = true;
+    try {
+      seen = !!localStorage.getItem(seenKey(pathname));
+    } catch {
+      seen = true;
+    }
+    if (seen) return;
+    const t = setTimeout(() => {
+      setMode("page");
+      setIndex(0);
+      setOpen(true);
+    }, 900);
+    return () => clearTimeout(t);
+  }, [pathname, autoStart]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +149,7 @@ export default function GuidedTour({ role, autoStart }: { role: Role; autoStart:
       const el = target
         ? Array.from(document.querySelectorAll(`[data-tour="${target}"]`)).find((e) => e.getBoundingClientRect().width > 0)
         : undefined;
+      if (el) el.scrollIntoView({ block: "nearest", inline: "nearest" });
       setRect(el ? el.getBoundingClientRect() : null);
     }
     const frame = requestAnimationFrame(measure);
@@ -96,12 +177,26 @@ export default function GuidedTour({ role, autoStart }: { role: Role; autoStart:
   const vw = typeof window === "undefined" ? 1280 : window.innerWidth;
   const vh = typeof window === "undefined" ? 800 : window.innerHeight;
 
+  // The card is never allowed to leave the screen: it goes beside the target
+  // when there is room, otherwise below or above it, and is finally clamped to
+  // the viewport (over the target if the target is as tall as the screen).
+  const CARD_H = 230;
   let cardStyle: React.CSSProperties | undefined;
   if (rect) {
-    const roomRight = rect.right + 16 + CARD_WIDTH < vw;
-    cardStyle = roomRight
-      ? { left: rect.right + 16, top: Math.min(Math.max(rect.top - 8, 12), vh - 220) }
-      : { left: Math.max(12, Math.min(rect.right - CARD_WIDTH, vw - CARD_WIDTH - 12)), top: rect.bottom + 14 };
+    const left = Math.max(12, Math.min(rect.left, vw - CARD_WIDTH - 12));
+    let top: number;
+    let leftPos = left;
+    if (rect.right + 16 + CARD_WIDTH < vw && rect.width < vw * 0.5) {
+      leftPos = rect.right + 16;
+      top = rect.top - 8;
+    } else if (rect.bottom + 14 + CARD_H < vh) {
+      top = rect.bottom + 14;
+    } else if (rect.top - 14 - CARD_H > 0) {
+      top = rect.top - 14 - CARD_H;
+    } else {
+      top = vh - CARD_H - 16;
+    }
+    cardStyle = { left: leftPos, top: Math.max(12, Math.min(top, vh - CARD_H - 12)) };
   }
 
   const card = (

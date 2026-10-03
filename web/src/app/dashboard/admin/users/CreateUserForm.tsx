@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { notify } from "@/lib/notify";
 import { createUser } from "../actions";
 import Select from "../../_components/Select";
-import Checkbox from "../../_components/Checkbox";
+import MultiSelect from "../../_components/MultiSelect";
 
 type Client = { client_id: string; display_name: string };
 type ActionState = { email: string; tempPassword: string } | { error: string } | null;
@@ -13,15 +14,7 @@ const inputClass =
 
 export default function CreateUserForm({ clients }: { clients: Client[] }) {
   const [role, setRole] = useState("user");
-  const [assigned, setAssigned] = useState<Set<string>>(new Set());
-  function toggleAssigned(id: string) {
-    setAssigned((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const [assigned, setAssigned] = useState<string[]>([]);
   const [state, formAction, pending] = useActionState<ActionState, FormData>(async (_prev, formData) => {
     try {
       return await createUser(formData);
@@ -30,8 +23,13 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
     }
   }, null);
 
+  useEffect(() => {
+    if (state && "email" in state) notify("User created");
+    else if (state && "error" in state) notify(state.error, "error");
+  }, [state]);
+
   return (
-    <div className="mb-8 rounded-lg border border-zinc-800 p-4">
+    <div data-tour="user-create" className="mb-8 rounded-lg border border-zinc-800 p-4">
       <p className="mb-3 text-sm font-semibold text-zinc-200">Create a user</p>
 
       {state && "tempPassword" in state && (
@@ -57,6 +55,10 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
             <input name="display_name" className={inputClass} />
           </div>
           <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">WhatsApp number</label>
+            <input name="phone" type="tel" placeholder="+919876543210" className={inputClass} />
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-medium text-zinc-400">Role</label>
             <Select name="role" value={role} onChange={setRole} className="[&_select]:py-2">
               <option value="admin">Admin</option>
@@ -68,19 +70,15 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
         {role === "user" && (
           <div>
             <p className="mb-1.5 text-xs font-medium text-zinc-400">Assigned clients</p>
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {clients.map((c) => (
-                <Checkbox
-                  key={c.client_id}
-                  name="client_ids"
-                  value={c.client_id}
-                  checked={assigned.has(c.client_id)}
-                  onChange={() => toggleAssigned(c.client_id)}
-                  label={c.display_name}
-                />
-              ))}
-              {clients.length === 0 && <p className="text-xs text-zinc-500">No clients exist yet -- add one first.</p>}
-            </div>
+            <MultiSelect
+              placeholder={clients.length === 0 ? "No clients yet" : "Select clients"}
+              options={clients.map((c) => ({ id: c.client_id, label: c.display_name }))}
+              selected={assigned}
+              onChange={setAssigned}
+            />
+            {assigned.map((id) => (
+              <input key={id} type="hidden" name="client_ids" value={id} />
+            ))}
           </div>
         )}
 

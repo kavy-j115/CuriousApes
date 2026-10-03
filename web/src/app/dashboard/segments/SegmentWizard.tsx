@@ -186,7 +186,7 @@ export default function SegmentWizard() {
   ];
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3">
+    <div data-tour="segment-wizard" className="flex max-w-2xl flex-col gap-3">
       <StepCard
         n={1}
         title="Input file"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { logout } from "@/app/login/actions";
 import { ROLE_THEME } from "@/lib/roleTheme";
@@ -51,8 +52,11 @@ export default function ProfileMenu({ profile }: { profile: Profile }) {
             }}
             className="w-full rounded px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-900"
           >
-            Take the tour
+            App tour
           </button>
+          <Link href="/change-password" className="block w-full rounded px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-900">
+            Change password
+          </Link>
           <form action={logout}>
             <button
               type="submit"

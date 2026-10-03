@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CircleHelp } from "lucide-react";
 import { MAIN_NAV, ADMIN_NAV } from "./nav";
 import type { Role } from "@/lib/auth/profile";
 
@@ -78,6 +79,16 @@ export default function Sidebar({ role }: { role: Role }) {
           </nav>
         </>
       )}
+
+      <button
+        type="button"
+        data-tour="sidebar-tutorial"
+        onClick={() => window.dispatchEvent(new CustomEvent("start-tour", { detail: { kind: "page" } }))}
+        className="mt-auto flex items-center gap-2.5 rounded-md border-l-2 border-transparent px-3 py-2 text-sm text-zinc-400 transition-all hover:translate-x-0.5 hover:bg-zinc-900 hover:text-zinc-100"
+      >
+        <CircleHelp size={16} />
+        Tutorial
+      </button>
     </aside>
   );
 }

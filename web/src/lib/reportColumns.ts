@@ -93,6 +93,9 @@ export type ReportConfig = {
   derivedColumns?: DerivedColumn[];
   // Each brand's report has its own header colour (hex, e.g. "4472C4").
   headerColor?: string;
+  // The client's target PROAS. At or above it the cell is green, fading
+  // linearly through yellow to red as PROAS drops towards 0.
+  idealRoas?: number;
 } | null;
 
 export const ALL_METRIC_KEYS: MetricKey[] = [
@@ -149,10 +152,11 @@ export function defaultLabel(key: MetricKey): string {
   return AVAILABLE_METRICS.find((m) => m.key === key)?.defaultLabel ?? key;
 }
 
-// PROAS colouring: a continuous red -> yellow -> green scale based on the
-// values in the table itself (lowest = red, median = yellow, highest = green),
-// like the agency's Excel reports -- never fixed good/bad thresholds. Pass every
-// row that is shown, including a Total row, so colours are relative to them.
+// PROAS colouring: a smooth red -> yellow -> green gradient. With the client's
+// ideal ROAS set, colour is linear in PROAS / idealRoas -- ideal (or better) is
+// green, half of ideal is yellow, 0 is red -- so there are no fixed thresholds.
+// Without an ideal ROAS it falls back to the table's own values (lowest = red,
+// median = yellow, highest = green); pass every row shown, Total row included.
 const SCALE_RED = [248, 105, 107];
 const SCALE_YELLOW = [255, 235, 132];
 const SCALE_GREEN = [99, 190, 123];
@@ -161,7 +165,21 @@ function mix(a: number[], b: number[], t: number): number[] {
   return a.map((v, i) => Math.round(v + (b[i] - v) * t));
 }
 
-export function proasColorScale(rows: ReportRow[]): (r: ReportRow) => CSSProperties | undefined {
+function gradient(t: number): CSSProperties {
+  const c = Math.min(1, Math.max(0, t));
+  const rgb = c < 0.5 ? mix(SCALE_RED, SCALE_YELLOW, c * 2) : mix(SCALE_YELLOW, SCALE_GREEN, (c - 0.5) * 2);
+  return { backgroundColor: `rgba(${rgb.join(",")},0.5)` };
+}
+
+export function proasColorScale(rows: ReportRow[], idealRoas?: number): (r: ReportRow) => CSSProperties | undefined {
+  if (idealRoas && idealRoas > 0) {
+    return (r) => {
+      if (r.proas === null || r.proas === undefined) return undefined;
+      const v = Number(r.proas);
+      return Number.isNaN(v) ? undefined : gradient(v / idealRoas);
+    };
+  }
+
   const values = rows
     .map((r) => r.proas)
     .filter((v) => v !== null && v !== undefined)
@@ -179,11 +197,12 @@ export function proasColorScale(rows: ReportRow[]): (r: ReportRow) => CSSPropert
     if (r.proas === null || r.proas === undefined) return undefined;
     const v = Number(r.proas);
     if (Number.isNaN(v)) return undefined;
-    const rgb =
+    // Same gradient, positioned by rank within the table: min 0, median 0.5, max 1.
+    const t =
       v <= median
-        ? mix(SCALE_RED, SCALE_YELLOW, median === min ? 1 : (v - min) / (median - min))
-        : mix(SCALE_YELLOW, SCALE_GREEN, max === median ? 1 : (v - median) / (max - median));
-    return { backgroundColor: `rgba(${rgb.join(",")},0.5)` };
+        ? (median === min ? 0.5 : 0.5 * ((v - min) / (median - min)))
+        : (max === median ? 0.5 : 0.5 + 0.5 * ((v - median) / (max - median)));
+    return gradient(t);
   };
 }
 
@@ -192,7 +211,7 @@ export function proasColorScale(rows: ReportRow[]): (r: ReportRow) => CSSPropert
 // rows (and Total row) the PROAS colour scale is computed over.
 export function resolveReportColumns(config: ReportConfig, scaleRows: ReportRow[] = []): ColumnDef[] {
   const dayColumn: ColumnDef = { key: "report_date", label: "Day", fmt: (r) => r.report_date };
-  const proasStyle = proasColorScale(scaleRows);
+  const proasStyle = proasColorScale(scaleRows, config?.idealRoas);
 
   function toColumnDef(key: MetricKey, label: string): ColumnDef {
     return {

@@ -25,7 +25,7 @@ export default async function AdminClientsPage() {
 
       <CreateClientForm />
 
-      <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
+      <div data-tour="client-table" className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
@@ -45,6 +45,7 @@ export default async function AdminClientsPage() {
                 key={c.client_id}
                 users={(users ?? []).filter((u) => u.role === "user").map((u) => ({ id: u.id as string, label: (u.display_name || u.email || u.id) as string, role: u.role as string }))}
                 clientLogin={(users ?? []).find((u) => u.role === "client" && (access ?? []).some((a) => a.user_id === u.id && a.client_id === c.client_id && !a.expires_at))?.email ?? null}
+                clientLoginId={(users ?? []).find((u) => u.role === "client" && (access ?? []).some((a) => a.user_id === u.id && a.client_id === c.client_id && !a.expires_at))?.id as string | undefined ?? null}
                 access={(access ?? []).filter((a) => a.client_id === c.client_id).map((a) => ({ user_id: a.user_id as string, expires_at: a.expires_at as string | null }))}
                 client={{
                   ...c,

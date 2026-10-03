@@ -66,7 +66,9 @@ export default async function ComparisonsPage({
     return (
       <div>
         <h1 className="mb-2 text-xl font-semibold text-zinc-50">Comparisons</h1>
+        <div data-tour="compare-controls">
         <CompareDateControls />
+      </div>
       </div>
     );
   }
@@ -74,7 +76,9 @@ export default async function ComparisonsPage({
   return (
     <div>
       <h1 className="mb-4 text-xl font-semibold text-zinc-50">Comparisons</h1>
-      <CompareDateControls />
+      <div data-tour="compare-controls">
+        <CompareDateControls />
+      </div>
 
       {!hasPeriods && <p className="text-sm text-zinc-500">Fill in both periods above.</p>}
 
@@ -83,7 +87,7 @@ export default async function ComparisonsPage({
       )}
 
       {hasPeriods && !compareError && (
-        <div className="flex flex-col gap-8">
+        <div data-tour="compare-results" className="flex flex-col gap-8">
           <CompareView rowsA={rowsA} rowsB={rowsB} labelA={`${aFrom} – ${aTo}`} labelB={`${bFrom} – ${bTo}`} />
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">

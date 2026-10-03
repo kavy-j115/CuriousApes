@@ -73,11 +73,31 @@ def load_all(conn=None) -> list[dict]:
         # agency token. Names only -- no secret value is read here.
         cur.execute("SELECT name FROM vault.secrets WHERE name LIKE %s;", ("%.meta_ads.access_token",))
         own_meta_token = {name for (name,) in cur.fetchall()}
+        # Agency users' WhatsApp numbers: a user with a client assigned (permanent
+        # access) also receives that client's alerts and daily report. Admins are
+        # not added here -- they can ask the bot for any client instead.
+        cur.execute(
+            """
+            SELECT ca.client_id, up.phone
+            FROM client_access ca JOIN user_profiles up ON up.id = ca.user_id
+            WHERE ca.expires_at IS NULL AND up.role = 'user' AND up.phone IS NOT NULL;
+            """
+        )
+        staff_phones: dict[str, list[str]] = {}
+        for cid, phone in cur.fetchall():
+            staff_phones.setdefault(cid, []).append(phone)
         for (client_id, display_name, alert_thresholds, whatsapp_recipients,
              store_domain, ad_account_id, ga4_property_id, sync_enabled) in rows:
             config = by_id.setdefault(client_id, {"client_id": client_id, "display_name": display_name})
             config["thresholds"] = alert_thresholds or {}
-            config["notifications"] = {"whatsapp_recipients": list(whatsapp_recipients or [])}
+            recipients: list[str] = []
+            seen: set[str] = set()
+            for phone in list(whatsapp_recipients or []) + staff_phones.get(client_id, []):
+                key = "".join(ch for ch in phone if ch.isdigit())
+                if key and key not in seen:
+                    seen.add(key)
+                    recipients.append(phone)
+            config["notifications"] = {"whatsapp_recipients": recipients}
             config["sync_enabled"] = bool(sync_enabled)
 
             if store_domain:

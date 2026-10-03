@@ -1,12 +1,43 @@
 import { NextResponse } from "next/server";
+import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
+import { todayIn } from "@/lib/dashboardData";
+import { ReportRow, computeTotal } from "@/lib/reportMath";
+import {
+  ALL_METRIC_KEYS,
+  attachDerivedColumns,
+  resolveReportColumns,
+  type ReportConfig,
+} from "@/lib/reportColumns";
 
-// Two-step authorization, not one: the user's own session (via the normal
-// RLS-protected client) decides WHETHER they can have this file; a
-// privileged key then FETCHES it server-side. The service role key is never
-// used to decide access -- only to do the fetch once access is already
-// proven, and it never reaches the browser (this whole handler runs on the
-// server only).
+// The Excel report is built here, on request, from the same daily_report_metrics
+// rows and the same column / colour rules as the Reports page -- so the download
+// is always the range on screen (this month so far by default) and never depends
+// on a file the pipeline may not have produced yet.
+//
+// Access is decided by the user's own session: both queries below go through the
+// RLS-protected client, so a user who can't see this client gets nothing back.
+
+const PCT_KEYS = new Set(["atc_pct", "conversion_pct", "checkout_pct"]);
+const INT_KEYS = new Set(["sessions", "add_to_carts", "order_count"]);
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function numFmt(key: string, isPct?: boolean): string {
+  if (PCT_KEYS.has(key) || isPct) return "0.0%";
+  if (INT_KEYS.has(key)) return "#,##0";
+  if (key === "proas") return "0.0";
+  return "#,##0.00";
+}
+
+// rgba(r,g,b,0.5) from the web gradient, blended over white for a solid Excel fill.
+function solidFill(css: string | undefined): string | null {
+  const m = css?.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/);
+  if (!m) return null;
+  const a = Number(m[4]);
+  const hex = [m[1], m[2], m[3]].map((v) => Math.round(Number(v) * a + 255 * (1 - a)).toString(16).padStart(2, "0"));
+  return `FF${hex.join("").toUpperCase()}`;
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
 
@@ -16,60 +47,96 @@ export async function GET(request: Request, { params }: { params: Promise<{ clie
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // RLS decides this, not application logic: if the current user isn't
-  // admin and has no client_access row for this client, this query returns
-  // nothing regardless of whether the client_id is real.
   const { data: client } = await supabase
     .from("clients")
-    .select("client_id")
+    .select("client_id, display_name, report_config, timezone")
     .eq("client_id", clientId)
     .single();
-
   if (!client) {
     return NextResponse.json({ error: "Not found or not authorized" }, { status: 404 });
   }
+  const reportConfig = (client.report_config ?? null) as ReportConfig;
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
-    return NextResponse.json(
-      { error: "Report storage not configured yet (SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY unset)" },
-      { status: 503 }
-    );
+  const search = new URL(request.url).searchParams;
+  const fromParam = search.get("from");
+  const toParam = search.get("to");
+  const today = todayIn(client.timezone);
+  const from = fromParam && DATE_RE.test(fromParam) ? fromParam : `${today.slice(0, 8)}01`;
+  const to = toParam && DATE_RE.test(toParam) ? toParam : fromParam && DATE_RE.test(fromParam) ? fromParam : today;
+
+  const { data, error } = await supabase
+    .from("daily_report_metrics")
+    .select("*")
+    .eq("client_id", clientId)
+    .gte("report_date", from)
+    .lte("report_date", to)
+    .order("report_date", { ascending: true });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const derived = reportConfig?.derivedColumns;
+  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], derived);
+  if (rows.length === 0) {
+    return NextResponse.json({ error: "No data for this range." }, { status: 404 });
   }
+  const isSingleDay = from === to;
+  const total = isSingleDay ? null : attachDerivedColumns([computeTotal([...rows].reverse())], derived)[0];
 
-  // daily = the full report the pipeline writes each run; weekly/monthly are
-  // the last-7-day / last-30-day summaries it writes alongside it
-  // (src/reports/summaries.py). Whitelisted -- never a caller-built path.
-  const type = new URL(request.url).searchParams.get("type") ?? "daily";
-  const files: Record<string, { path: string; name: string }> = {
-    daily: { path: `${clientId}/${clientId}_business_health_report.xlsx`, name: `${clientId}_business_health_report.xlsx` },
-    weekly: { path: `${clientId}/summary/weekly.xlsx`, name: `${clientId}_weekly_report.xlsx` },
-    monthly: { path: `${clientId}/summary/monthly.xlsx`, name: `${clientId}_monthly_report.xlsx` },
-  };
-  const file = files[type];
-  if (!file) {
-    return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
-  }
-  const filename = file.name;
-  const storageResponse = await fetch(
-    `${supabaseUrl}/storage/v1/object/reports/${file.path}`,
-    {
-      headers: {
-        Authorization: `Bearer ${serviceRoleKey}`,
-        apikey: serviceRoleKey,
-      },
-    }
-  );
+  const allRows = total ? [...rows, total] : rows;
+  const columns = resolveReportColumns(reportConfig, allRows);
+  const derivedKeys = new Map((derived ?? []).map((d) => [d.key, d.isPct]));
+  const proasStyle = columns.find((c) => c.key === "proas")?.cellStyle;
 
-  if (!storageResponse.ok) {
-    return NextResponse.json(
-      { error: `Report not found in storage (has the pipeline run for this client yet?)` },
-      { status: 404 }
-    );
-  }
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Business Health Report");
 
-  return new NextResponse(storageResponse.body, {
+  ws.mergeCells(1, 1, 1, columns.length);
+  const title = ws.getCell(1, 1);
+  title.value = `${client.display_name} - Business Health Report (${from === to ? from : `${from} to ${to}`})`;
+  title.font = { name: "Arial", bold: true, size: 14 };
+  title.alignment = { horizontal: "center" };
+
+  const headerColor = (reportConfig?.headerColor ?? "").replace(/^#/, "");
+  const headerArgb = `FF${/^[0-9a-fA-F]{6}$/.test(headerColor) ? headerColor.toUpperCase() : "4472C4"}`;
+  const hr = parseInt(headerArgb.slice(2, 4), 16), hg = parseInt(headerArgb.slice(4, 6), 16), hb = parseInt(headerArgb.slice(6, 8), 16);
+  const headerText = 0.299 * hr + 0.587 * hg + 0.114 * hb < 150 ? "FFFFFFFF" : "FF000000";
+  const thin = { style: "thin" as const, color: { argb: "FF000000" } };
+  const border = { top: thin, left: thin, bottom: thin, right: thin };
+
+  columns.forEach((c, i) => {
+    const cell = ws.getCell(3, i + 1);
+    cell.value = c.label;
+    cell.font = { name: "Arial", bold: true, color: { argb: headerText } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: headerArgb } };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = border;
+    ws.getColumn(i + 1).width = 16;
+  });
+
+  allRows.forEach((row, r) => {
+    const isTotal = total !== null && r === allRows.length - 1;
+    columns.forEach((c, i) => {
+      const cell = ws.getCell(4 + r, i + 1);
+      const isMetric = (ALL_METRIC_KEYS as string[]).includes(c.key) || derivedKeys.has(c.key);
+      if (c.key === "report_date") {
+        cell.value = isTotal ? "Total" : row.report_date;
+      } else if (isMetric) {
+        const raw = (row as unknown as Record<string, string | number | null>)[c.key];
+        cell.value = raw === null || raw === undefined || raw === "" ? null : Number(raw);
+        cell.numFmt = numFmt(c.key, derivedKeys.get(c.key));
+      }
+      if (c.key === "proas") {
+        const argb = solidFill(proasStyle?.(row)?.backgroundColor as string | undefined);
+        if (argb) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
+      }
+      cell.font = { name: "Arial", bold: isTotal };
+      cell.alignment = { horizontal: "center" };
+      cell.border = border;
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const filename = `${clientId}_report_${from}_to_${to}.xlsx`;
+  return new NextResponse(buffer as ArrayBuffer, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,

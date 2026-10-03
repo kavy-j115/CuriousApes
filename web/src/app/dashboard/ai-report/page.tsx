@@ -33,7 +33,7 @@ export default async function AiReportPage({
     : { data: null };
 
   return (
-    <div className="max-w-3xl">
+    <div data-tour="ai-body" className="max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-50">AI Daily Report</h1>

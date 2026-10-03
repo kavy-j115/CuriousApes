@@ -3,11 +3,13 @@
 import Checkbox from "../../_components/Checkbox";
 import Select from "../../_components/Select";
 import MultiSelect from "../../_components/MultiSelect";
+import { notify, withToast } from "@/lib/notify";
 import { useState, useTransition } from "react";
-import { Trash2, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { Trash2, KeyRound, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import {
   deleteClientRecord,
   updateClientReportConfig,
+  resetUserPassword,
   updateClientNotifications,
   updateClientConnections,
   setClientSyncEnabled,
@@ -47,11 +49,13 @@ export default function ClientRow({
   users,
   access,
   clientLogin,
+  clientLoginId,
 }: {
   client: ClientRowData;
   users: AccessUser[];
   access: AccessRow[];
   clientLogin: string | null;
+  clientLoginId: string | null;
 }) {
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [useDefault, setUseDefault] = useState(!client.report_config);
@@ -62,6 +66,7 @@ export default function ClientRow({
     Object.fromEntries((client.report_config?.columns ?? []).map((c) => [c.key, c.label]))
   );
   const [headerColor, setHeaderColor] = useState(client.report_config?.headerColor ? `#${client.report_config.headerColor.replace(/^#/, "")}` : "");
+  const [idealRoas, setIdealRoas] = useState(client.report_config?.idealRoas ? String(client.report_config.idealRoas) : "");
   const [derivedColumns, setDerivedColumns] = useState<DerivedColumn[]>(client.report_config?.derivedColumns ?? []);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [revenuePct, setRevenuePct] = useState(String(client.alert_thresholds?.revenue_change_pct ?? ""));
@@ -84,6 +89,7 @@ export default function ClientRow({
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [loginPassword, setLoginPassword] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -124,8 +130,11 @@ export default function ClientRow({
       const color = /^#[0-9a-fA-F]{6}$/.test(headerColor) ? headerColor.slice(1) : undefined;
       const validDerived = derivedColumns.filter((dc) => dc.key.trim() && dc.label.trim() && dc.formula.trim() && !formulaError(derivedColumns.indexOf(dc)));
 
-      if (useDefault && !color && validDerived.length === 0) {
-        await updateClientReportConfig(client.client_id, null);
+      const ideal = Number(idealRoas);
+      const idealValue = idealRoas.trim() && Number.isFinite(ideal) && ideal > 0 ? ideal : undefined;
+
+      if (useDefault && !color && validDerived.length === 0 && idealValue === undefined) {
+        await withToast(() => updateClientReportConfig(client.client_id, null), "Report settings saved");
         return;
       }
 
@@ -135,11 +144,29 @@ export default function ClientRow({
             key: m.key,
             label: labels[m.key]?.trim() || m.defaultLabel,
           }));
-      await updateClientReportConfig(client.client_id, {
-        columns,
-        derivedColumns: validDerived.length > 0 ? validDerived : undefined,
-        headerColor: color,
-      });
+      await withToast(
+        () =>
+          updateClientReportConfig(client.client_id, {
+            columns,
+            derivedColumns: validDerived.length > 0 ? validDerived : undefined,
+            headerColor: color,
+            idealRoas: idealValue,
+          }),
+        "Report settings saved"
+      );
+    });
+  }
+
+  function resetClientLoginPassword() {
+    if (!clientLoginId || !confirm(`Reset the password for ${clientLogin}? They will have to choose a new one at next login.`)) return;
+    startTransition(async () => {
+      try {
+        const { tempPassword } = await resetUserPassword(clientLoginId);
+        setLoginPassword(tempPassword);
+        notify("Password reset");
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't reset the password.", "error");
+      }
     });
   }
 
@@ -150,6 +177,7 @@ export default function ClientRow({
       try {
         await deleteClientRecord(client.client_id);
         setDeleted(true);
+        notify("Client deleted");
       } catch (e) {
         setDeleteError(e instanceof Error ? e.message : "Delete failed.");
       }
@@ -158,21 +186,21 @@ export default function ClientRow({
 
   function saveAccess() {
     startTransition(async () => {
-      await setClientUserAccess(client.client_id, accessSelected);
+      await withToast(() => setClientUserAccess(client.client_id, accessSelected), "Access saved");
     });
   }
 
   function grantCollab() {
     if (!collabUserId) return;
     startTransition(async () => {
-      await grantTemporaryAccess(collabUserId, client.client_id);
+      await withToast(() => grantTemporaryAccess(collabUserId, client.client_id), "Access granted for 24 hours");
       setCollabUserId("");
     });
   }
 
   function revokeCollab(userId: string) {
     startTransition(async () => {
-      await revokeAccess(userId, client.client_id);
+      await withToast(() => revokeAccess(userId, client.client_id), "Access ended");
     });
   }
 
@@ -186,6 +214,7 @@ export default function ClientRow({
           metaAdAccountId: metaAccount,
           ga4PropertyId: ga4Property,
         });
+        notify("Connections saved");
       } catch (e) {
         setConnectionError(e instanceof Error ? e.message : "Couldn't save.");
       }
@@ -197,7 +226,10 @@ export default function ClientRow({
     startTransition(async () => {
       const result = await createShopifyInstallLink(client.client_id);
       if ("error" in result) setConnectionError(result.error);
-      else setInstallLink(result.url);
+      else {
+        setInstallLink(result.url);
+        notify("Install link created");
+      }
     });
   }
 
@@ -205,12 +237,13 @@ export default function ClientRow({
     if (!installLink) return;
     await navigator.clipboard.writeText(installLink);
     setCopied(true);
+    notify("Link copied");
     setTimeout(() => setCopied(false), 1500);
   }
 
   function handleSyncToggle(next: boolean) {
     startTransition(async () => {
-      await setClientSyncEnabled(client.client_id, next);
+      await withToast(() => setClientSyncEnabled(client.client_id, next), next ? "Sync turned on" : "Sync turned off");
     });
   }
 
@@ -221,10 +254,9 @@ export default function ClientRow({
       if (cacPct) thresholds!.cac_change_pct = Number(cacPct);
       if (roasPct) thresholds!.roas_change_pct = Number(roasPct);
       const recipientList = recipients.split(",").map((p) => p.trim()).filter(Boolean);
-      await updateClientNotifications(
-        client.client_id,
-        Object.keys(thresholds!).length > 0 ? thresholds : null,
-        recipientList
+      await withToast(
+        () => updateClientNotifications(client.client_id, Object.keys(thresholds!).length > 0 ? thresholds : null, recipientList),
+        "Alerts and WhatsApp numbers saved"
       );
     });
   }
@@ -237,7 +269,31 @@ export default function ClientRow({
         <td className="px-3 py-1.5 font-mono text-xs">{client.client_id}</td>
         <td className="px-3 py-1.5">
           {client.display_name}
-          <span className="block text-xs text-zinc-500">{clientLogin ?? "No client login"}</span>
+          <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+            {clientLogin ?? "No client login"}
+            {clientLoginId && (
+              <button onClick={resetClientLoginPassword} disabled={pending} aria-label="Reset client password" title="Reset password" className="rounded p-1 text-zinc-500 hover:bg-zinc-900 hover:text-accent">
+                <KeyRound size={12} />
+              </button>
+            )}
+          </span>
+          {loginPassword && (
+            <span className="mt-1 flex flex-wrap items-center gap-1.5 rounded border border-status-good/30 bg-status-good/10 px-2 py-1 text-xs text-status-good">
+              Temporary password: <span className="font-mono">{loginPassword}</span>
+              <button
+                onClick={() => {
+                  void navigator.clipboard.writeText(loginPassword);
+                  notify("Password copied");
+                }}
+                className="rounded border border-status-good/40 px-1.5 hover:bg-status-good/10"
+              >
+                Copy
+              </button>
+              <button onClick={() => setLoginPassword(null)} className="text-zinc-500 hover:text-zinc-300">
+                Hide
+              </button>
+            </span>
+          )}
         </td>
         <td className="px-3 py-1.5">
           <button onClick={() => setColumnsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
@@ -291,18 +347,36 @@ export default function ClientRow({
               )}
             </div>
 
+            <div className="mb-3 flex items-center gap-2 text-xs text-zinc-300">
+              <span className="text-zinc-400">Ideal ROAS</span>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="e.g. 4"
+                value={idealRoas}
+                onChange={(e) => setIdealRoas(e.target.value)}
+                className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
+              />
+            </div>
+
             {!useDefault && (
-              <div className="flex flex-col gap-1.5">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {AVAILABLE_METRICS.map((m) => (
-                  <div key={m.key} className="flex items-center gap-2">
-                    <Checkbox className="w-48" checked={enabled.has(m.key)} onChange={() => toggleMetric(m.key)} label={m.key} />
+                  <div
+                    key={m.key}
+                    className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 transition-colors ${
+                      enabled.has(m.key) ? "border-zinc-700 bg-zinc-900/60" : "border-zinc-900 bg-zinc-950"
+                    }`}
+                  >
+                    <Checkbox className="shrink-0" checked={enabled.has(m.key)} onChange={() => toggleMetric(m.key)} label={<span className="font-mono text-[11px] text-zinc-300">{m.key}</span>} />
                     <input
                       type="text"
                       disabled={!enabled.has(m.key)}
                       placeholder={defaultLabel(m.key)}
                       value={labels[m.key] ?? ""}
                       onChange={(e) => setLabels((prev) => ({ ...prev, [m.key]: e.target.value }))}
-                      className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 disabled:opacity-40"
+                      className="ml-auto w-28 min-w-0 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 disabled:opacity-40"
                     />
                   </div>
                 ))}
@@ -311,7 +385,22 @@ export default function ClientRow({
 
             <div className="mt-4 border-t border-zinc-900 pt-3">
               <p className="mb-1.5 text-xs font-medium text-zinc-300">Extra computed columns</p>
-              <p className="mb-2 text-xs text-zinc-500">{ALL_METRIC_KEYS.join(", ")}</p>
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {ALL_METRIC_KEYS.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    title="Copy"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(k);
+                      notify(`Copied ${k}`);
+                    }}
+                    className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-0.5 font-mono text-[11px] text-zinc-300 transition-colors hover:border-accent hover:text-accent"
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
               <div className="flex flex-col gap-2">
                 {derivedColumns.map((dc, i) => {
                   const error = formulaError(i);
@@ -486,7 +575,7 @@ export default function ClientRow({
                 <input type="number" step="1" value={roasPct} onChange={(e) => setRoasPct(e.target.value)} placeholder="off" className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100" />%
               </label>
             </div>
-            <p className="mb-1 text-xs font-medium text-zinc-300">WhatsApp recipients</p>
+            <p className="mb-1 text-xs font-medium text-zinc-300">WhatsApp numbers</p>
             <input
               type="text"
               value={recipients}

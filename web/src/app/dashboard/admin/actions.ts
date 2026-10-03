@@ -45,10 +45,21 @@ export async function createClientRecord(
   if (cac) thresholds.cac_change_pct = Number(cac);
   if (roas) thresholds.roas_change_pct = Number(roas);
 
-  const recipients = (formData.get("whatsapp_recipients") as string)
-    ?.split(",")
-    .map((p) => p.trim())
-    .filter(Boolean) ?? [];
+  // Ideal ROAS drives the PROAS colour gradient in every report (green at or
+  // above it, fading to red as it drops). Kept in report_config.
+  const idealRoasRaw = (formData.get("ideal_roas") as string | null)?.trim();
+  const idealRoas = idealRoasRaw ? Number(idealRoasRaw) : null;
+  if (idealRoas !== null && (!Number.isFinite(idealRoas) || idealRoas <= 0)) return { error: "Ideal ROAS must be a number above 0." };
+
+  let recipients: string[];
+  try {
+    recipients = ((formData.get("whatsapp_recipients") as string) ?? "")
+      .split(",")
+      .map((p) => normalizePhone(p))
+      .filter((p): p is string => !!p);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Invalid phone number." };
+  }
 
   let connections;
   try {
@@ -68,6 +79,7 @@ export async function createClientRecord(
     display_name,
     alert_thresholds: Object.keys(thresholds).length > 0 ? thresholds : null,
     whatsapp_recipients: recipients,
+    report_config: idealRoas !== null ? { columns: [], idealRoas } : null,
     ...connections,
   });
   if (error) return { error: error.code === "23505" ? "A client with that ID already exists." : error.message };
@@ -239,14 +251,29 @@ export async function deleteUserRecord(userId: string): Promise<{ fullyDeleted: 
 // Creates a Supabase Auth account + its profile + (optionally) client access,
 // returning a one-time temporary password. Shared by createUser (agency
 // staff) and createClientRecord (a client's own login).
+// WhatsApp numbers are kept with the country code (digits, optional leading +)
+// because the bot matches a sender by the full international number.
+function normalizePhone(raw: string | null | undefined): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return null;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 11 || digits.length > 15) throw new Error("Phone numbers need the country code, e.g. +919876543210.");
+  return `+${digits}`;
+}
+
+function makeTempPassword(): string {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
+
 async function createAccount(input: {
   email: string;
   display_name: string | null;
   role: "admin" | "user" | "client";
   clientIds: string[];
+  phone?: string | null;
 }): Promise<{ email: string; tempPassword: string }> {
   const admin = getAdminClient();
-  const tempPassword = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const tempPassword = makeTempPassword();
 
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email: input.email,
@@ -259,7 +286,7 @@ async function createAccount(input: {
 
   const { error: profileError } = await admin
     .from("user_profiles")
-    .insert({ id: created.user.id, role: input.role, display_name: input.display_name, email: input.email });
+    .insert({ id: created.user.id, role: input.role, display_name: input.display_name, email: input.email, phone: input.phone ?? null, must_change_password: true });
   if (profileError) throw new Error(profileError.message);
 
   if (input.clientIds.length > 0) {
@@ -281,6 +308,7 @@ export async function createUser(formData: FormData) {
   const display_name = (formData.get("display_name") as string)?.trim();
   const role = formData.get("role") as string;
   const clientIds = formData.getAll("client_ids") as string[];
+  const phone = normalizePhone(formData.get("phone") as string | null);
 
   if (!email || !["admin", "user"].includes(role)) {
     throw new Error("email and a valid role (admin or user) are required.");
@@ -291,12 +319,37 @@ export async function createUser(formData: FormData) {
     display_name: display_name || null,
     role: role as "admin" | "user",
     clientIds: role === "user" ? clientIds : [],
+    phone,
   });
 
   revalidatePath("/dashboard/admin/users");
   revalidatePath("/dashboard/admin/permissions");
 
   return result;
+}
+
+// Lost or compromised password: sets a new temporary one (shown once to the
+// admin to pass on) and forces the person to choose their own at next login.
+export async function resetUserPassword(userId: string): Promise<{ tempPassword: string }> {
+  const { profile } = await requireAdmin();
+  if (userId === profile.id) throw new Error("Use Change password in your profile menu for your own account.");
+
+  const admin = getAdminClient();
+  const tempPassword = makeTempPassword();
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: tempPassword });
+  if (error) throw new Error(error.message);
+  const { error: flagError } = await admin.from("user_profiles").update({ must_change_password: true }).eq("id", userId);
+  if (flagError) throw new Error(flagError.message);
+
+  return { tempPassword };
+}
+
+export async function updateUserPhone(userId: string, phone: string) {
+  const { supabase } = await requireAdmin();
+  const { error } = await supabase.from("user_profiles").update({ phone: normalizePhone(phone) }).eq("id", userId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/admin/users");
 }
 
 export async function updateUserRole(userId: string, role: string) {

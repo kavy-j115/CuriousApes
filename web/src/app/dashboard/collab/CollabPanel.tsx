@@ -1,5 +1,6 @@
 "use client";
 
+import { notify } from "@/lib/notify";
 import { useState, useTransition } from "react";
 import Select from "../_components/Select";
 import { shareClientWithUser, revokeShare } from "./actions";
@@ -38,6 +39,7 @@ export default function CollabPanel({
       else {
         setMessage(null);
         setUserId("");
+        notify("Shared for 24 hours");
       }
     });
   }
@@ -47,6 +49,7 @@ export default function CollabPanel({
     startTransition(async () => {
       const result = await revokeShare(g.client_id, g.user_id);
       if ("error" in result) setMessage(result.error);
+      else notify("Access ended");
     });
   }
 
@@ -55,7 +58,7 @@ export default function CollabPanel({
   }
 
   return (
-    <div className="max-w-xl">
+    <div data-tour="collab-panel" className="max-w-xl">
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <Select value={clientId} onChange={setClientId}>
           <option value="">Client…</option>

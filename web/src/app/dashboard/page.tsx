@@ -1,39 +1,53 @@
-import Link from "next/link";
-import { ArrowRight, DollarSign, Users, ShoppingCart, Receipt, Repeat, UserPlus, UserCheck, TrendingUp } from "lucide-react";
+import { DollarSign, Users, ShoppingCart, Receipt, Repeat, UserPlus, UserCheck, TrendingUp } from "lucide-react";
 import { getSupabase, getClients, todayIn, shiftDate } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { computeTotal, ReportRow, fmtNum } from "@/lib/reportMath";
-import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
+import { attachDerivedColumns } from "@/lib/reportColumns";
 import StatTile from "./_components/StatTile";
+import ReportDateControls from "./_components/ReportDateControls";
 import MetricsCharts from "@/app/MetricsCharts";
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function pctChange(current: number, previous: number): number | null {
   if (!previous) return null;
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
+function daysBetween(from: string, to: string): number {
+  return Math.round((new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / 86_400_000) + 1;
+}
+
+function fmtDay(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
 export default async function DashboardHomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string }>;
+  searchParams: Promise<{ client?: string; from?: string; to?: string }>;
 }) {
-  const { client } = await searchParams;
+  const { client, from, to } = await searchParams;
   const supabase = await getSupabase();
   const clients = await getClients();
 
   const selectedClient = await resolveSelectedClient(client, clients ?? []);
-  const reportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
+  const selected = clients?.find((c) => c.client_id === selectedClient);
 
   if (!selectedClient) {
     return <p className="text-sm text-zinc-500">No client assigned to your account yet.</p>;
   }
 
-  // The store's own "today" -- the last 30 days means 30 days in the
-  // client's time zone, not UTC's. Previous period = the 30 days before that.
-  const timeZone = clients.find((c) => c.client_id === selectedClient)?.timezone;
-  const today = todayIn(timeZone);
-  const since30 = shiftDate(today, -29);
-  const since60 = shiftDate(today, -59);
+  // The range shown: the one picked in the date controls, otherwise the store's
+  // last 30 days (its own "today", not UTC's). The comparison period is the
+  // same number of days immediately before it.
+  const today = todayIn(selected?.timezone);
+  const hasRange = !!from && DATE_RE.test(from);
+  const rangeTo = hasRange ? (to && DATE_RE.test(to) && to >= from ? to : from) : today;
+  const rangeFrom = hasRange ? from : shiftDate(today, -29);
+  const length = daysBetween(rangeFrom, rangeTo);
+  const prevTo = shiftDate(rangeFrom, -1);
+  const prevFrom = shiftDate(prevTo, -(length - 1));
 
   // One parallel batch: every query only needs selectedClient, so none
   // should wait on another (each is a separate trip to the database).
@@ -48,22 +62,25 @@ export default async function DashboardHomePage({
       .from("daily_report_metrics")
       .select("*")
       .eq("client_id", selectedClient)
-      .gte("report_date", since60)
+      .gte("report_date", prevFrom)
+      .lte("report_date", rangeTo)
       .order("report_date", { ascending: false }),
     // Counted by the database (head: true returns no rows) -- fetching rows
     // and taking .length silently capped at Supabase's 1,000-row limit.
     supabase.from("customer_ltv").select("customer_id", { count: "exact", head: true }).eq("client_id", selectedClient),
     supabase.from("customer_ltv").select("customer_id", { count: "exact", head: true }).eq("client_id", selectedClient).gte("order_count", 2),
     supabase.from("cohort_retention").select("retention_rate").eq("client_id", selectedClient).eq("months_since_cohort", 1),
-    supabase.from("daily_new_vs_returning").select("new_customers, returning_customers").eq("client_id", selectedClient).gte("order_date", since30),
+    supabase
+      .from("daily_new_vs_returning")
+      .select("new_customers, returning_customers")
+      .eq("client_id", selectedClient)
+      .gte("order_date", rangeFrom)
+      .lte("order_date", rangeTo),
   ]);
 
-  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
-  const currentRows = rows.filter((r) => r.report_date >= since30);
-  const previousRows = rows.filter((r) => r.report_date < since30);
-
-  const tableRows = rows.slice(0, 10);
-  const reportColumns = resolveReportColumns(reportConfig, tableRows);
+  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], selected?.report_config?.derivedColumns);
+  const currentRows = rows.filter((r) => r.report_date >= rangeFrom);
+  const previousRows = rows.filter((r) => r.report_date < rangeFrom);
 
   const current = computeTotal(currentRows);
   const previous = computeTotal(previousRows);
@@ -74,8 +91,8 @@ export default async function DashboardHomePage({
     retentionRows && retentionRows.length > 0
       ? retentionRows.reduce((acc, r) => acc + Number(r.retention_rate), 0) / retentionRows.length
       : null;
-  const newCustomers30d = (newVsReturningRows ?? []).reduce((acc, r) => acc + (r.new_customers as number), 0);
-  const returningCustomers30d = (newVsReturningRows ?? []).reduce((acc, r) => acc + (r.returning_customers as number), 0);
+  const newCustomers = (newVsReturningRows ?? []).reduce((acc, r) => acc + (r.new_customers as number), 0);
+  const returningCustomers = (newVsReturningRows ?? []).reduce((acc, r) => acc + (r.returning_customers as number), 0);
 
   const revenue = Number(current.gross_revenue);
   const prevRevenue = Number(previous.gross_revenue);
@@ -84,9 +101,23 @@ export default async function DashboardHomePage({
 
   return (
     <div>
-      <h1 className="mb-6 text-xl font-semibold text-zinc-50">Dashboard</h1>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <h1 className="text-xl font-semibold text-zinc-50">Dashboard</h1>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <p className="text-xs text-zinc-400">
+            <span className="font-medium text-zinc-200">{selected?.display_name ?? selectedClient}</span>
+            {" · "}
+            {rangeFrom === rangeTo ? fmtDay(rangeFrom) : `${fmtDay(rangeFrom)} – ${fmtDay(rangeTo)}`}
+            {" · "}
+            {length} {length === 1 ? "day" : "days"}
+          </p>
+          <div data-tour="dash-dates">
+            <ReportDateControls defaultRange="30d" />
+          </div>
+        </div>
+      </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div data-tour="dash-tiles" className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile icon={DollarSign} label="Gross Sales" value={fmtNum(revenue)} deltaPct={pctChange(revenue, prevRevenue)} />
         <StatTile icon={Users} label="Customers" value={fmtNum(totalCustomers)} deltaPct={null} />
         <StatTile
@@ -103,53 +134,17 @@ export default async function DashboardHomePage({
           deltaPct={null}
         />
         <StatTile icon={Repeat} label="Repeat Customers" value={fmtNum(repeatCustomers)} deltaPct={null} />
-        <StatTile icon={UserPlus} label="New Customers (30d)" value={fmtNum(newCustomers30d)} deltaPct={null} />
-        <StatTile icon={UserCheck} label="Returning Customers (30d)" value={fmtNum(returningCustomers30d)} deltaPct={null} />
+        <StatTile icon={UserPlus} label="New Customers" value={fmtNum(newCustomers)} deltaPct={null} />
+        <StatTile icon={UserCheck} label="Returning Customers" value={fmtNum(returningCustomers)} deltaPct={null} />
       </div>
 
       {currentRows.length > 0 ? (
-        <MetricsCharts data={[...currentRows].reverse()} />
-      ) : (
-        <p className="text-sm text-zinc-500">No data in the last 30 days for this client.</p>
-      )}
-
-      <div className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-zinc-50">Daily Reports</h2>
-          <Link
-            href={`/dashboard/reports${selectedClient ? `?client=${selectedClient}` : ""}`}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:border-accent hover:text-accent"
-          >
-            View full reports
-            <ArrowRight size={14} />
-          </Link>
+        <div data-tour="dash-charts">
+          <MetricsCharts data={[...currentRows].reverse()} />
         </div>
-
-        {rows.length === 0 ? (
-          <p className="text-sm text-zinc-500">No daily reports yet for this client.</p>
-        ) : (
-          <div className="overflow-x-auto scrollbar-thin rounded-lg border border-zinc-900">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-200">
-                  {reportColumns.map((c) => (
-                    <th key={c.key} className="whitespace-nowrap px-2 py-2">{c.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tableRows.map((row) => (
-                  <tr key={row.report_date} className="border-b border-zinc-900 text-zinc-300">
-                    {reportColumns.map((c) => (
-                      <td key={c.key} style={c.cellStyle?.(row)} className={`whitespace-nowrap px-2 py-1 ${c.cellClassName?.(row) ?? ""}`}>{c.fmt(row)}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      ) : (
+        <p className="text-sm text-zinc-500">No data in this range for this client.</p>
+      )}
     </div>
   );
 }

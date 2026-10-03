@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { notify } from "@/lib/notify";
 import { createClientRecord } from "../actions";
 
 type State =
@@ -28,12 +29,17 @@ export default function CreateClientForm() {
     }
   }, null);
 
+  useEffect(() => {
+    if (state && "ok" in state) notify("Client added");
+    else if (state && "error" in state) notify(state.error, "error");
+  }, [state]);
+
   // The client ID follows the brand name until someone edits it by hand.
   const idRef = useRef<HTMLInputElement>(null);
   const idTouched = useRef(false);
 
   return (
-    <div className="mb-8">
+    <div data-tour="client-create" className="mb-8">
       <form action={formAction} className="flex flex-col gap-3 rounded-lg border border-zinc-800 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -84,6 +90,10 @@ export default function CreateClientForm() {
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
+            <label className={labelClass}>Ideal ROAS</label>
+            <input name="ideal_roas" type="number" step="0.1" min="0" placeholder="e.g. 4" className={`w-24 ${inputClass}`} />
+          </div>
+          <div>
             <label className={labelClass}>Revenue drop alert %</label>
             <input name="revenue_change_pct" type="number" placeholder="off" className={`w-24 ${inputClass}`} />
           </div>
@@ -96,7 +106,7 @@ export default function CreateClientForm() {
             <input name="roas_change_pct" type="number" placeholder="off" className={`w-24 ${inputClass}`} />
           </div>
           <div className="flex-1">
-            <label className={labelClass}>WhatsApp recipients</label>
+            <label className={labelClass}>Client WhatsApp number(s)</label>
             <input name="whatsapp_recipients" placeholder="+919876543210, +919876543211" className={inputClass} />
           </div>
         </div>

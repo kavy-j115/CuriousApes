@@ -49,7 +49,7 @@ export default async function AlertsPage({
         <p className="text-sm text-zinc-500">No alerts for this client yet.</p>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div data-tour="alerts-list" className="flex flex-col gap-2">
         {(alerts ?? []).map((a) => (
           <div key={a.id} className="flex items-start gap-3 rounded-lg border border-zinc-900 p-3">
             <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium capitalize ${styleFor(a.alert_type)}`}>

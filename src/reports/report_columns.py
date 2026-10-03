@@ -73,3 +73,13 @@ def resolve_header_color(report_config: dict | None) -> str:
     """Per-client header fill (hex, no #) -- each brand's report has its own."""
     color = ((report_config or {}).get("headerColor") or "").lstrip("#")
     return color if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color) else DEFAULT_HEADER_COLOR
+
+
+def resolve_ideal_roas(report_config: dict | None) -> float | None:
+    """The client's target PROAS (green at or above it, fading to red as it
+    drops towards 0), or None to colour relative to the table's own values."""
+    try:
+        value = float((report_config or {}).get("idealRoas") or 0)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None

@@ -16,6 +16,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/login");
   }
 
+  // A temporary password (new account, or reset by an admin) must be replaced
+  // before anything else is shown.
+  if (profile.must_change_password) {
+    redirect("/change-password");
+  }
+
   // RLS on `clients` already returns exactly the right scoped set per role
   // (is_admin() sees all, has_client_access() limits a 'user'/'client' to
   // their assigned rows). Only id + name go to the browser, not report_config.

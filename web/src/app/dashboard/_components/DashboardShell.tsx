@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import GuidedTour from "./GuidedTour";
+import ToastHost from "./ToastHost";
 import type { Profile } from "@/lib/auth/profile";
 
 type Client = { client_id: string; display_name: string };
@@ -42,6 +43,7 @@ export default function DashboardShell({
   return (
     <div className="flex min-h-screen bg-black text-zinc-50">
       <GuidedTour role={profile.role} autoStart={showTour} />
+      <ToastHost />
       <div className="hidden lg:block">
         <Sidebar role={profile.role} />
       </div>

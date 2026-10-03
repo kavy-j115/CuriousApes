@@ -1,12 +1,14 @@
 "use client";
 
+import { notify, withToast } from "@/lib/notify";
 import { useState, useTransition } from "react";
-import { Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import {
   updateUserRole,
+  updateUserPhone,
+  resetUserPassword,
   setUserClientAccess,
   grantTemporaryAccess,
-  grantCollabWithUser,
   revokeAccess,
   deleteUserRecord,
 } from "../actions";
@@ -21,9 +23,9 @@ type UserWithAccess = {
   email: string | null;
   display_name: string | null;
   role: Role;
+  phone: string;
   access: AccessRow[];
 };
-type CollabCandidate = { id: string; label: string };
 
 function hoursLeft(expiresAt: string): number {
   return Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 3_600_000));
@@ -32,20 +34,20 @@ function hoursLeft(expiresAt: string): number {
 export default function UserRow({
   user,
   clients,
-  collabCandidates,
   currentUserId,
 }: {
   user: UserWithAccess;
   clients: Client[];
-  collabCandidates: CollabCandidate[]; // other non-admin users who have clients to share
   currentUserId: string;
 }) {
   const [role, setRole] = useState<Role>(user.role);
   const permanentIds = user.access.filter((a) => !a.expires_at).map((a) => a.client_id);
   const temporary = user.access.filter((a) => a.expires_at);
   const [selected, setSelected] = useState<string[]>(permanentIds);
-  const [collabTarget, setCollabTarget] = useState(""); // "user:<id>" or "client:<id>"
-  const [collabMessage, setCollabMessage] = useState<string | null>(null);
+  const [collabClient, setCollabClient] = useState("");
+  const [phone, setPhone] = useState(user.phone);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [newPassword, setNewPassword] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [deleted, setDeleted] = useState<{ fullyDeleted: boolean } | null>(null);
   const isSelf = user.id === currentUserId;
@@ -53,39 +55,61 @@ export default function UserRow({
   const unassignedClients = clients.filter(
     (c) => !permanentIds.includes(c.client_id) && !temporary.some((t) => t.client_id === c.client_id)
   );
-  const otherUsers = collabCandidates.filter((c) => c.id !== user.id);
 
   function handleRoleChange(newRole: Role) {
     setRole(newRole);
     startTransition(async () => {
-      await updateUserRole(user.id, newRole);
+      await withToast(() => updateUserRole(user.id, newRole), "Role updated");
     });
   }
 
   function saveAccess() {
     startTransition(async () => {
-      await setUserClientAccess(user.id, selected);
+      await withToast(() => setUserClientAccess(user.id, selected), "Access saved");
     });
   }
 
   function grant() {
-    if (!collabTarget) return;
-    setCollabMessage(null);
-    const [kind, id] = [collabTarget.slice(0, collabTarget.indexOf(":")), collabTarget.slice(collabTarget.indexOf(":") + 1)];
+    if (!collabClient) return;
     startTransition(async () => {
-      if (kind === "user") {
-        const result = await grantCollabWithUser(user.id, id);
-        setCollabMessage("error" in result ? result.error : `Granted 24h access to ${result.granted} client(s).`);
-      } else {
-        await grantTemporaryAccess(user.id, id);
-      }
-      setCollabTarget("");
+      await withToast(() => grantTemporaryAccess(user.id, collabClient), "Access granted for 24 hours");
+      setCollabClient("");
     });
+  }
+
+  function savePhone() {
+    startTransition(async () => {
+      try {
+        await updateUserPhone(user.id, phone);
+        notify("WhatsApp number saved");
+        setEditingPhone(false);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't save the number.", "error");
+      }
+    });
+  }
+
+  function handleResetPassword() {
+    if (!confirm(`Reset the password for ${user.email ?? "this user"}? They will have to choose a new one at next login.`)) return;
+    startTransition(async () => {
+      try {
+        const { tempPassword } = await resetUserPassword(user.id);
+        setNewPassword(tempPassword);
+        notify("Password reset");
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't reset the password.", "error");
+      }
+    });
+  }
+
+  function cancelPhone() {
+    setPhone(user.phone);
+    setEditingPhone(false);
   }
 
   function revoke(clientId: string) {
     startTransition(async () => {
-      await revokeAccess(user.id, clientId);
+      await withToast(() => revokeAccess(user.id, clientId), "Access ended");
     });
   }
 
@@ -94,6 +118,7 @@ export default function UserRow({
     startTransition(async () => {
       const result = await deleteUserRecord(user.id);
       setDeleted(result);
+      notify("User deleted");
     });
   }
 
@@ -115,6 +140,37 @@ export default function UserRow({
             {user.display_name || "—"} {isSelf && <span className="text-xs text-zinc-500">(you)</span>}
           </p>
           <p className="text-xs text-zinc-500">{user.email}</p>
+          <div className="mt-1 flex items-center gap-1.5 text-xs">
+            {editingPhone ? (
+              <>
+                <input
+                  type="tel"
+                  autoFocus
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") savePhone();
+                    if (e.key === "Escape") cancelPhone();
+                  }}
+                  placeholder="+919876543210"
+                  className="w-40 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 focus:border-accent focus:outline-none"
+                />
+                <button onClick={savePhone} disabled={pending} className="rounded bg-accent px-2 py-1 font-medium text-white disabled:opacity-40">
+                  Save
+                </button>
+                <button onClick={cancelPhone} className="text-zinc-500 hover:text-zinc-300">
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <span className={user.phone ? "text-zinc-400" : "text-zinc-600"}>{user.phone || "No WhatsApp number"}</span>
+                <button onClick={() => setEditingPhone(true)} aria-label="Edit WhatsApp number" title="Edit WhatsApp number" className="rounded p-1 text-zinc-500 hover:bg-zinc-900 hover:text-accent">
+                  <Pencil size={12} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <span title={isSelf ? "Can't change your own role" : undefined} className={isSelf || pending ? "pointer-events-none opacity-50" : ""}>
@@ -124,12 +180,37 @@ export default function UserRow({
             </Select>
           </span>
           {!isSelf && (
+            <button onClick={handleResetPassword} disabled={pending} aria-label="Reset password" title="Reset password" className="rounded p-1.5 text-zinc-500 hover:bg-zinc-900 hover:text-accent">
+              <KeyRound size={14} />
+            </button>
+          )}
+          {!isSelf && (
             <button onClick={handleDelete} disabled={pending} aria-label="Delete user" className="rounded p-1.5 text-zinc-500 hover:bg-status-bad/10 hover:text-status-bad">
               <Trash2 size={14} />
             </button>
           )}
         </div>
       </div>
+
+      {newPassword && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded border border-status-good/30 bg-status-good/10 p-2.5 text-xs text-status-good">
+          <span>
+            Temporary password: <span className="font-mono">{newPassword}</span>
+          </span>
+          <button
+            onClick={() => {
+              void navigator.clipboard.writeText(newPassword);
+              notify("Password copied");
+            }}
+            className="rounded border border-status-good/40 px-2 py-0.5 hover:bg-status-good/10"
+          >
+            Copy
+          </button>
+          <button onClick={() => setNewPassword(null)} className="ml-auto text-zinc-500 hover:text-zinc-300">
+            Hide
+          </button>
+        </div>
+      )}
 
       {role !== "admin" && (
         <div className="mt-3 flex flex-col gap-3 border-t border-zinc-900 pt-3">
@@ -166,31 +247,19 @@ export default function UserRow({
                     </div>
                   );
                 })}
-                {(otherUsers.length > 0 || unassignedClients.length > 0) && (
+                {unassignedClients.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Select value={collabTarget} onChange={setCollabTarget}>
-                      <option value="">Share access with…</option>
-                      {otherUsers.length > 0 && (
-                        <optgroup label="Another user's clients">
-                          {otherUsers.map((u) => (
-                            <option key={u.id} value={`user:${u.id}`}>{u.label}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {unassignedClients.length > 0 && (
-                        <optgroup label="A single client">
-                          {unassignedClients.map((c) => (
-                            <option key={c.client_id} value={`client:${c.client_id}`}>{c.display_name}</option>
-                          ))}
-                        </optgroup>
-                      )}
+                    <Select value={collabClient} onChange={setCollabClient}>
+                      <option value="">Choose a client…</option>
+                      {unassignedClients.map((c) => (
+                        <option key={c.client_id} value={c.client_id}>{c.display_name}</option>
+                      ))}
                     </Select>
-                    <button onClick={grant} disabled={!collabTarget || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-                      Grant
+                    <button onClick={grant} disabled={!collabClient || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                      Grant 24h
                     </button>
                   </div>
                 )}
-                {collabMessage && <p className="text-xs text-zinc-400">{collabMessage}</p>}
               </div>
             </div>
           )}
