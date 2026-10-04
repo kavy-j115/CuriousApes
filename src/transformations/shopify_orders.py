@@ -10,15 +10,26 @@ import psycopg2
 import psycopg2.extras
 
 
-def transform_orders(conn, client_id: str) -> int:
-    """Returns the number of orders transformed."""
+def transform_orders(conn, client_id: str, fetched_since=None) -> int:
+    """Returns the number of orders transformed.
+
+    fetched_since: only transform raw orders written at or after this time
+    (the daily run passes its own start, so it handles just the orders it
+    fetched). None transforms every stored order -- needed for a first
+    backfill or after a change to this transform."""
     read_cur = conn.cursor()
     write_cur = conn.cursor()
 
-    read_cur.execute(
-        "SELECT shopify_order_id, raw_data FROM raw_shopify_orders WHERE client_id = %s;",
-        (client_id,),
-    )
+    if fetched_since is None:
+        read_cur.execute(
+            "SELECT shopify_order_id, raw_data FROM raw_shopify_orders WHERE client_id = %s;",
+            (client_id,),
+        )
+    else:
+        read_cur.execute(
+            "SELECT shopify_order_id, raw_data FROM raw_shopify_orders WHERE client_id = %s AND fetched_at >= %s;",
+            (client_id, fetched_since),
+        )
     rows = read_cur.fetchall()
 
     for shopify_order_id, raw in rows:

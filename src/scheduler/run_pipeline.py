@@ -3,7 +3,7 @@ config/clients/*.yaml. One client's failure, or one data source's failure,
 never stops the others -- each step is isolated so a broken Meta token for
 client A doesn't prevent client B's Shopify report from generating.
 
-Run with: venv/Scripts/python -m src.scheduler.run_pipeline [--days N]
+Run with: venv/Scripts/python -m src.scheduler.run_pipeline [--days N] [--meta-days N] [--client ID]
 --days sets how far back the Shopify/Meta incremental sync looks (default
 3, to catch late edits/refunds/attribution) -- not a full historical
 backfill, which is a separate, deliberately unbuilt operation (see
@@ -15,7 +15,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -53,7 +53,18 @@ class StepResult:
     detail: str
 
 
-def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None) -> list[StepResult]:
+def _last_complete_day(conn, client_id: str) -> date:
+    """Yesterday in the client's own time zone -- the latest day that is whole."""
+    cur = conn.cursor()
+    cur.execute("SELECT (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;", (client_id,))
+    row = cur.fetchone()
+    cur.close()
+    return (row[0] if row else date.today()) - timedelta(days=1)
+
+
+def run_for_client(
+    conn, config: dict, since: str, whatsapp_config: dict | None, meta_since: str | None = None, full_transform: bool = False
+) -> list[StepResult]:
     client_id = config["client_id"]
     results: list[StepResult] = []
 
@@ -61,10 +72,13 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     shopify_token = resolve_secret(conn, config, "shopify", "access_token_secret")
     if store_domain and shopify_token:
         try:
+            # Taken before the sync so the transform below can pick up exactly
+            # the orders this run saved (a few minutes of slack for clock drift).
+            sync_started = datetime.now(timezone.utc) - timedelta(minutes=5)
             count = sync_shopify_orders(conn, client_id, store_domain, shopify_token, created_at_min=since)
             results.append(StepResult("Shopify sync", "ok", f"{count} orders"))
             try:
-                t_count = transform_orders(conn, client_id)
+                t_count = transform_orders(conn, client_id, None if full_transform else sync_started)
                 results.append(StepResult("Shopify transform", "ok", f"{t_count} orders"))
             except Exception as e:
                 results.append(StepResult("Shopify transform", "error", str(e)))
@@ -80,7 +94,9 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
             cur.execute("SELECT (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;", (client_id,))
             row = cur.fetchone()
             cur.close()
-            store_today = (row[0] if row else date.today()).isoformat()
+            # Completed days only: the store's current day is still in progress, so
+            # it is fetched (and shown) the next morning, once it is whole.
+            store_today = ((row[0] if row else date.today()) - timedelta(days=1)).isoformat()
             sales_days, session_days = sync_shopify_analytics(
                 conn, client_id, store_domain, shopify_token, since, store_today,
                 include_sessions=not get_value(config, "ga4", "property_id"),
@@ -95,8 +111,8 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     meta_token = resolve_secret(conn, config, "meta_ads", "access_token_secret")
     if ad_account_id and meta_token:
         try:
-            until = date.today().isoformat()
-            count = sync_meta_insights(conn, client_id, ad_account_id, meta_token, since, until)
+            until = _last_complete_day(conn, client_id).isoformat()
+            count = sync_meta_insights(conn, client_id, ad_account_id, meta_token, meta_since or since, until)
             results.append(StepResult("Meta sync", "ok", f"{count} daily rows"))
         except Exception as e:
             results.append(StepResult("Meta sync", "error", str(e)))
@@ -107,7 +123,7 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     ga4_service_account_json = resolve_secret(conn, config, "ga4", "service_account_secret")
     if property_id and ga4_service_account_json:
         try:
-            until = date.today().isoformat()
+            until = _last_complete_day(conn, client_id).isoformat()
             service_account_info = json.loads(ga4_service_account_json)
             count = sync_ga4_sessions(conn, client_id, property_id, service_account_info, since, until)
             results.append(StepResult("GA4 sync", "ok", f"{count} daily rows"))
@@ -130,21 +146,19 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
 
     rows: list[dict] = []
     trend_rows: list[dict] = []
+    completed_rows: list[dict] = []
     try:
-        # The daily report is month-to-date: every day from the 1st of the
-        # store's current month, so it accumulates a row per day through the
-        # month with a Total row for the month so far.
-        month_cur = conn.cursor()
-        month_cur.execute(
-            "SELECT date_trunc('month', now() AT TIME ZONE timezone)::date, (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;",
-            (client_id,),
-        )
-        month_start, store_today_date = month_cur.fetchone()
-        month_cur.close()
+        # The daily report is month-to-date as of the last COMPLETE day: every day
+        # from the 1st through yesterday, with a Total row. The current day is
+        # left out until it is whole (it appears in tomorrow's report). On the
+        # 1st this is the full previous month.
+        last_complete = _last_complete_day(conn, client_id)
+        month_start = last_complete.replace(day=1)
+        store_today_date = last_complete + timedelta(days=1)
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
-            "SELECT * FROM daily_report_metrics WHERE client_id = %s AND report_date >= %s ORDER BY report_date;",
-            (client_id, month_start),
+            "SELECT * FROM daily_report_metrics WHERE client_id = %s AND report_date >= %s AND report_date <= %s ORDER BY report_date;",
+            (client_id, month_start, last_complete),
         )
         rows = cur.fetchall()
         # Alerts and anomaly detection compare today against recent days, which
@@ -155,6 +169,11 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
             (client_id, store_today_date - timedelta(days=30)),
         )
         trend_rows = cur.fetchall()
+        # Alerts and anomaly detection judge COMPLETED days only: the store's
+        # current day is still in progress (at 9 AM it holds a few hours of
+        # orders), so comparing it with full days would raise a false alarm
+        # every morning.
+        completed_rows = [r for r in trend_rows if r["report_date"] < store_today_date]
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = OUTPUT_DIR / f"{client_id}_business_health_report.xlsx"
         generate_report(rows, config.get("display_name", client_id), str(output_path), report_config)
@@ -200,9 +219,9 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     # history, so it's silent (not a false "nothing found") until that
     # history exists for this client.
     try:
-        anomaly_alerts = check_anomalies(trend_rows)
+        anomaly_alerts = check_anomalies(completed_rows)
         if anomaly_alerts:
-            save_alerts(conn, client_id, date.today(), anomaly_alerts)
+            save_alerts(conn, client_id, completed_rows[-1]["report_date"], anomaly_alerts)
             results.append(StepResult("Anomaly detection", "ok", f"{len(anomaly_alerts)} anomaly(ies) found"))
         else:
             results.append(StepResult("Anomaly detection", "ok", "none found / insufficient history"))
@@ -212,10 +231,10 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
     thresholds = get_value(config, "thresholds") or {}
     if not thresholds:
         results.append(StepResult("Alerts", "skipped", "no thresholds configured for this client"))
-    elif len(trend_rows) < 2:
+    elif len(completed_rows) < 2:
         results.append(StepResult("Alerts", "skipped", "insufficient history (need at least 2 days)"))
     else:
-        today_row, yesterday_row = dict(trend_rows[-1]), dict(trend_rows[-2])
+        today_row, yesterday_row = dict(completed_rows[-1]), dict(completed_rows[-2])
         # Merges in the accurate CAC denominator (new customers that day)
         # from daily_new_vs_returning (sql/019_new_vs_returning.sql) --
         # daily_report_metrics itself doesn't have this column, so
@@ -275,7 +294,9 @@ def run_for_client(conn, config: dict, since: str, whatsapp_config: dict | None)
         elif not recipients:
             results.append(StepResult("WhatsApp daily report", "skipped", "no whatsapp_recipients for this client"))
         else:
-            sent, send_errors = push_daily_report(client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key)
+            sent, send_errors = push_daily_report(
+                client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key, views["mtd"]
+            )
             for err in send_errors:
                 results.append(StepResult("WhatsApp daily report", "error", err))
             if sent:
@@ -296,12 +317,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=3, help="how many days back to sync (default 3)")
     parser.add_argument(
+        "--meta-days",
+        type=int,
+        default=None,
+        help="how many days back to sync Meta Ads only (default: same as --days)",
+    )
+    parser.add_argument(
+        "--full-transform",
+        action="store_true",
+        help="re-process every stored order, not just the ones this run fetched (first backfill, or after changing the transform)",
+    )
+    parser.add_argument(
         "--client",
         help="sync only this client_id (still requires its sync switch to be on); default is every enabled client",
     )
     args = parser.parse_args()
 
     since = (date.today() - timedelta(days=args.days)).isoformat()
+    meta_since = (date.today() - timedelta(days=args.meta_days)).isoformat() if args.meta_days is not None else None
     started_at = date.today().isoformat()
 
     print(f"D2C ANALYTICS PIPELINE\n{'-' * 22}\nStarted: {started_at} (syncing since {since})")
@@ -326,7 +359,7 @@ def main():
         if config.get("sync_enabled") is False:
             print_summary(config["client_id"], [StepResult("Sync", "skipped", "switched off for this client")])
             continue
-        results = run_for_client(conn, config, since, whatsapp_config)
+        results = run_for_client(conn, config, since, whatsapp_config, meta_since, args.full_transform)
         print_summary(config["client_id"], results)
         if any(r.status == "error" for r in results):
             any_errors = True

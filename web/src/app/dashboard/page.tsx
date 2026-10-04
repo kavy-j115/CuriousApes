@@ -1,5 +1,5 @@
 import { DollarSign, Users, ShoppingCart, Receipt, Repeat, UserPlus, UserCheck, TrendingUp } from "lucide-react";
-import { getSupabase, getClients, todayIn, shiftDate } from "@/lib/dashboardData";
+import { getSupabase, getClients, lastCompleteDay, shiftDate } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { computeTotal, ReportRow, fmtNum } from "@/lib/reportMath";
 import { attachDerivedColumns } from "@/lib/reportColumns";
@@ -39,12 +39,14 @@ export default async function DashboardHomePage({
   }
 
   // The range shown: the one picked in the date controls, otherwise the store's
-  // last 30 days (its own "today", not UTC's). The comparison period is the
-  // same number of days immediately before it.
-  const today = todayIn(selected?.timezone);
+  // last 30 COMPLETE days (ending yesterday in its own time zone -- today is left
+  // out until it is whole). The comparison period is the same number of days
+  // immediately before it.
+  const lastDay = lastCompleteDay(selected?.timezone);
   const hasRange = !!from && DATE_RE.test(from);
-  const rangeTo = hasRange ? (to && DATE_RE.test(to) && to >= from ? to : from) : today;
-  const rangeFrom = hasRange ? from : shiftDate(today, -29);
+  const pickedTo = hasRange ? (to && DATE_RE.test(to) && to >= from ? to : from) : lastDay;
+  const rangeTo = pickedTo > lastDay ? lastDay : pickedTo;
+  const rangeFrom = hasRange ? (from > rangeTo ? rangeTo : from) : shiftDate(lastDay, -29);
   const length = daysBetween(rangeFrom, rangeTo);
   const prevTo = shiftDate(rangeFrom, -1);
   const prevFrom = shiftDate(prevTo, -(length - 1));

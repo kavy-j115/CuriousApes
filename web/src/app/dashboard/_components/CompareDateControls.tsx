@@ -15,28 +15,28 @@ const PRESETS: { label: string; range: () => Range }[] = [
   {
     label: "Yesterday vs day before",
     range: () => {
-      const t = new Date();
+      const t = addDays(new Date(), -1); // last complete day
       return { aFrom: iso(addDays(t, -2)), aTo: iso(addDays(t, -2)), bFrom: iso(addDays(t, -1)), bTo: iso(addDays(t, -1)) };
     },
   },
   {
     label: "Last 7 days vs previous 7",
     range: () => {
-      const t = new Date();
+      const t = addDays(new Date(), -1); // last complete day
       return { aFrom: iso(addDays(t, -13)), aTo: iso(addDays(t, -7)), bFrom: iso(addDays(t, -6)), bTo: iso(t) };
     },
   },
   {
     label: "Last 30 days vs previous 30",
     range: () => {
-      const t = new Date();
+      const t = addDays(new Date(), -1); // last complete day
       return { aFrom: iso(addDays(t, -59)), aTo: iso(addDays(t, -30)), bFrom: iso(addDays(t, -29)), bTo: iso(t) };
     },
   },
   {
     label: "This month vs last month",
     range: () => {
-      const t = new Date();
+      const t = addDays(new Date(), -1); // last complete day
       const prevStart = new Date(t.getFullYear(), t.getMonth() - 1, 1);
       const prevLength = new Date(t.getFullYear(), t.getMonth(), 0).getDate();
       const prevEnd = new Date(prevStart.getFullYear(), prevStart.getMonth(), Math.min(t.getDate(), prevLength));
@@ -107,17 +107,17 @@ export default function CompareDateControls() {
           <div className="flex flex-col items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Period A (before)</span>
             <div className="flex items-center gap-2">
-              <input type="date" value={aFrom} onChange={(e) => navigate({ aFrom: e.target.value })} className={bigInput} />
+              <input type="date" max={iso(addDays(new Date(), -1))} value={aFrom} onChange={(e) => navigate({ aFrom: e.target.value })} className={bigInput} />
               <span className="text-zinc-600">–</span>
-              <input type="date" value={aTo} onChange={(e) => navigate({ aTo: e.target.value })} className={bigInput} />
+              <input type="date" max={iso(addDays(new Date(), -1))} value={aTo} onChange={(e) => navigate({ aTo: e.target.value })} className={bigInput} />
             </div>
           </div>
           <div className="flex flex-col items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Period B (after)</span>
             <div className="flex items-center gap-2">
-              <input type="date" value={bFrom} onChange={(e) => navigate({ bFrom: e.target.value })} className={bigInput} />
+              <input type="date" max={iso(addDays(new Date(), -1))} value={bFrom} onChange={(e) => navigate({ bFrom: e.target.value })} className={bigInput} />
               <span className="text-zinc-600">–</span>
-              <input type="date" value={bTo} onChange={(e) => navigate({ bTo: e.target.value })} className={bigInput} />
+              <input type="date" max={iso(addDays(new Date(), -1))} value={bTo} onChange={(e) => navigate({ bTo: e.target.value })} className={bigInput} />
             </div>
           </div>
         </div>
@@ -134,15 +134,15 @@ export default function CompareDateControls() {
       <div className="flex flex-wrap items-center gap-3">
       <div className="flex items-center gap-1.5">
         <span className="text-xs font-medium text-zinc-500">A</span>
-        <input type="date" value={aFrom} onChange={(e) => navigate({ aFrom: e.target.value })} className={inputClass} />
+        <input type="date" max={iso(addDays(new Date(), -1))} value={aFrom} onChange={(e) => navigate({ aFrom: e.target.value })} className={inputClass} />
         <span className="text-zinc-700">–</span>
-        <input type="date" value={aTo} onChange={(e) => navigate({ aTo: e.target.value })} className={inputClass} />
+        <input type="date" max={iso(addDays(new Date(), -1))} value={aTo} onChange={(e) => navigate({ aTo: e.target.value })} className={inputClass} />
       </div>
       <div className="flex items-center gap-1.5">
         <span className="text-xs font-medium text-zinc-500">B</span>
-        <input type="date" value={bFrom} onChange={(e) => navigate({ bFrom: e.target.value })} className={inputClass} />
+        <input type="date" max={iso(addDays(new Date(), -1))} value={bFrom} onChange={(e) => navigate({ bFrom: e.target.value })} className={inputClass} />
         <span className="text-zinc-700">–</span>
-        <input type="date" value={bTo} onChange={(e) => navigate({ bTo: e.target.value })} className={inputClass} />
+        <input type="date" max={iso(addDays(new Date(), -1))} value={bTo} onChange={(e) => navigate({ bTo: e.target.value })} className={inputClass} />
       </div>
       <button onClick={reset} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300">
         <X size={12} /> reset

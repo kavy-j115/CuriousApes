@@ -10,7 +10,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 
 const GRAPH_API_VERSION = "v21.0";
 
-const VIEW_LABELS: Record<string, string> = { mtd: "Month to date", "7d": "Last 7 days", yesterday: "Yesterday" };
+const VIEW_LABELS: Record<string, string> = { mtd: "Monthly report", "7d": "Last 7 days", yesterday: "Yesterday" };
 
 async function vaultSecret(name: string): Promise<string | null> {
   const { data, error } = await getAdminClient().rpc("get_vault_secret", { p_name: name });

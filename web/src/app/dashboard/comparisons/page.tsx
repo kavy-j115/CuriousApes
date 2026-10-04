@@ -1,4 +1,4 @@
-import { getSupabase, getClients } from "@/lib/dashboardData";
+import { getSupabase, getClients, lastCompleteDay } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { ReportRow } from "@/lib/reportMath";
 import { resolveReportColumns, attachDerivedColumns, type ReportConfig } from "@/lib/reportColumns";
@@ -47,6 +47,9 @@ export default async function ComparisonsPage({
   const clients = await getClients();
   const selectedClient = await resolveSelectedClient(client, clients ?? []);
   const reportConfig: ReportConfig = clients?.find((c) => c.client_id === selectedClient)?.report_config ?? null;
+  // Periods stop at the last complete day: a half-finished day is never compared.
+  const lastDay = lastCompleteDay(clients?.find((c) => c.client_id === selectedClient)?.timezone);
+  const clamp = (d: string) => (d > lastDay ? lastDay : d);
 
   let rowsA: ReportRow[] = [];
   let rowsB: ReportRow[] = [];
@@ -54,8 +57,8 @@ export default async function ComparisonsPage({
 
   if (hasPeriods) {
     const [resultA, resultB] = await Promise.all([
-      supabase.from("daily_report_metrics").select("*").eq("client_id", selectedClient).gte("report_date", aFrom).lte("report_date", aTo).order("report_date"),
-      supabase.from("daily_report_metrics").select("*").eq("client_id", selectedClient).gte("report_date", bFrom).lte("report_date", bTo).order("report_date"),
+      supabase.from("daily_report_metrics").select("*").eq("client_id", selectedClient).gte("report_date", aFrom).lte("report_date", clamp(aTo!)).order("report_date"),
+      supabase.from("daily_report_metrics").select("*").eq("client_id", selectedClient).gte("report_date", bFrom).lte("report_date", clamp(bTo!)).order("report_date"),
     ]);
     rowsA = attachDerivedColumns((resultA.data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
     rowsB = attachDerivedColumns((resultB.data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);

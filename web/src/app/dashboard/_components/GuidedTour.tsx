@@ -43,7 +43,7 @@ const PAGE_TOURS: Record<string, Step[]> = {
   ],
   "/dashboard/reports": [
     { target: "report-views", title: "Table or chart", body: "Switch between the daily table and charts of the same days." },
-    { target: "report-dates", title: "Date range", body: "\"This month\" shows every day from the 1st up to today with a Total row. Pick Today, 7D, 30D, 90D or Custom to see a different range instead." },
+    { target: "report-dates", title: "Date range", body: "\"This month\" shows every day from the 1st up to yesterday with a Total row. Today appears tomorrow, once the day is complete. Pick 7D, 30D, 90D or Custom to see a different range instead." },
     { target: "report-download", title: "Download", body: "Downloads an Excel file of exactly what is on screen, in the same format." },
     { target: "report-table", title: "The report", body: "One row per day and a Total row at the bottom. PROAS is coloured green when it reaches the client's ideal ROAS and fades towards red as it drops." },
   ],

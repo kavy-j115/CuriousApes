@@ -1,5 +1,5 @@
 import { Download } from "lucide-react";
-import { getSupabase, getClients, todayIn } from "@/lib/dashboardData";
+import { getSupabase, getClients, lastCompleteDay } from "@/lib/dashboardData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { ReportRow, computeTotal } from "@/lib/reportMath";
 import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
@@ -23,15 +23,30 @@ export default async function ReportsPage({
   const selected = clients.find((c) => c.client_id === selectedClient);
   const reportConfig = selected?.report_config ?? null;
 
-  // Default (no custom range): the store's current month so far -- every day
-  // from the 1st up to today, oldest first, with a Total row. Days that
-  // haven't happened yet simply have no row. A custom range replaces this.
-  const today = todayIn(selected?.timezone);
-  const monthStart = `${today.slice(0, 8)}01`;
+  // Default (no custom range): the store's current month up to its last COMPLETE
+  // day (yesterday) -- every day from the 1st, oldest first, with a Total row.
+  // Today is left out until it is whole, so it appears tomorrow. A custom range
+  // replaces this but is never allowed past the last complete day.
+  const lastDay = lastCompleteDay(selected?.timezone);
+  const monthStart = `${lastDay.slice(0, 8)}01`;
   const isCustom = !!from;
   const isSingleDay = isCustom && (!to || to === from);
   const rangeFrom = isCustom ? from : monthStart;
-  const rangeTo = isCustom ? (to || from) : today;
+  const rawTo = isCustom ? (to || from) : lastDay;
+  const rangeTo = rawTo > lastDay ? lastDay : rawTo;
+
+  // What the table covers, said plainly -- on the 1st the default view is the
+  // finished previous month, which must not look like the new (empty) month.
+  const monthName = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const dayMonth = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  const endsMonth = new Date(`${rangeTo}T00:00:00Z`).getUTCDate() === new Date(Date.UTC(Number(rangeTo.slice(0, 4)), Number(rangeTo.slice(5, 7)), 0)).getUTCDate();
+  const periodLabel = isCustom
+    ? rangeFrom === rangeTo
+      ? dayMonth(rangeFrom)
+      : `${dayMonth(rangeFrom)} – ${dayMonth(rangeTo)}`
+    : endsMonth
+      ? `${monthName(rangeTo)} · full month`
+      : `${monthName(rangeTo)} · 1–${Number(rangeTo.slice(8, 10))} ${dayMonth(rangeTo).split(" ")[1]}`;
 
   const { data, error } = await supabase
     .from("daily_report_metrics")
@@ -64,6 +79,9 @@ export default async function ReportsPage({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold text-zinc-50">Reports</h1>
+          <span className="rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-300" data-tour="report-period">
+            {periodLabel}
+          </span>
           <div data-tour="report-views" className="flex gap-1 rounded-full bg-zinc-900 p-1">
             {VIEWS.map((v) => (
               <a

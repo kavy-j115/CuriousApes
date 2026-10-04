@@ -26,6 +26,12 @@ export function todayIn(timeZone: string | null | undefined): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC" }).format(new Date());
 }
 
+// The latest day that is whole in the client's time zone (yesterday). Reports and
+// the dashboard stop here so a half-finished day is never shown.
+export function lastCompleteDay(timeZone: string | null | undefined): string {
+  return shiftDate(todayIn(timeZone), -1);
+}
+
 export function shiftDate(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);

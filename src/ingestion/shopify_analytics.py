@@ -11,7 +11,6 @@ def sync_shopify_analytics(conn, client_id: str, store_domain: str, access_token
     for clients that have their own GA4 property (GA4 is used for sessions
     there)."""
     sales = fetch_daily_sales(store_domain, access_token, since, until)
-    sessions = fetch_daily_sessions(store_domain, access_token, since, until) if include_sessions else []
 
     cur = conn.cursor()
     for r in sales:
@@ -28,6 +27,10 @@ def sync_shopify_analytics(conn, client_id: str, store_domain: str, access_token
             (client_id, r["report_date"], r["orders"], r["gross_sales"], r["discounts"], r["returns"],
              r["net_sales"], r["shipping_charges"], r["taxes"], r["total_sales"]),
         )
+    # Sales are saved before sessions are fetched, so a problem with the sessions
+    # query can't throw away the sales that already came back.
+    conn.commit()
+    sessions = fetch_daily_sessions(store_domain, access_token, since, until) if include_sessions else []
     for r in sessions:
         cur.execute(
             """

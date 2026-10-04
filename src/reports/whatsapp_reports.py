@@ -21,20 +21,33 @@ from src.notifications.whatsapp import send_whatsapp_report_image
 from src.reports.report_image import render_report_png
 from src.reports.storage import ensure_bucket_exists, upload_file, create_signed_url
 
-VIEWS = {"mtd": "Month to date", "7d": "Last 7 days", "yesterday": "Yesterday"}
+VIEWS = ["mtd", "7d", "yesterday"]
 
 
-def _view_rows(conn, client_id: str, view: str) -> list[dict]:
+def _view_label(view: str, start, end) -> str:
+    """Says exactly what period a picture covers, so a finished month is never
+    mistaken for the new, still-empty one (on the 1st, "month to date" is the
+    whole previous month)."""
+    if view == "mtd":
+        full_month = (end + timedelta(days=1)).day == 1
+        return f"{end:%B %Y} - full month" if full_month else f"{end:%B %Y} - 1 to {end.day} {end:%b}"
+    if view == "7d":
+        return f"Last 7 days ({start:%d %b} - {end:%d %b})"
+    return f"{end:%d %b %Y}"
+
+
+def _view_rows(conn, client_id: str, view: str) -> tuple[list[dict], str]:
     cur = conn.cursor()
     cur.execute("SELECT (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;", (client_id,))
-    today = cur.fetchone()[0]
+    # Completed days only: the store's current day is left out until it is whole.
+    last = cur.fetchone()[0] - timedelta(days=1)
     cur.close()
     if view == "mtd":
-        start, end = today.replace(day=1), today
+        start, end = last.replace(day=1), last
     elif view == "7d":
-        start, end = today - timedelta(days=6), today
+        start, end = last - timedelta(days=6), last
     else:
-        start = end = today - timedelta(days=1)
+        start = end = last
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         "SELECT * FROM daily_report_metrics WHERE client_id = %s AND report_date >= %s AND report_date <= %s ORDER BY report_date;",
@@ -42,36 +55,37 @@ def _view_rows(conn, client_id: str, view: str) -> list[dict]:
     )
     rows = cur.fetchall()
     cur.close()
-    return rows
+    return rows, _view_label(view, start, end)
 
 
 def render_and_store_views(
     conn, client_id: str, display_name: str, report_config: dict | None, supabase_url: str, service_role_key: str
-) -> list[str]:
-    """Returns the views that were rendered (a view with no data is skipped)."""
+) -> dict[str, str]:
+    """Returns {view: period label} for the views that were rendered (a view
+    with no data is skipped)."""
     ensure_bucket_exists(supabase_url, service_role_key)
-    done = []
+    done: dict[str, str] = {}
     with tempfile.TemporaryDirectory() as tmp:
-        for view, label in VIEWS.items():
-            rows = _view_rows(conn, client_id, view)
+        for view in VIEWS:
+            rows, label = _view_rows(conn, client_id, view)
             if not rows:
                 continue
             path = os.path.join(tmp, f"{view}.png")
             render_report_png(rows, f"{display_name} - {label}", path, report_config)
             upload_file(path, f"{client_id}/png/{view}.png", supabase_url, service_role_key, content_type="image/png")
-            done.append(view)
+            done[view] = label
     return done
 
 
 def push_daily_report(
     client_id: str, display_name: str, recipients: list[str], whatsapp_config: dict,
-    supabase_url: str, service_role_key: str,
+    supabase_url: str, service_role_key: str, period_label: str = "monthly report",
 ) -> tuple[int, list[str]]:
     """Sends the stored month-to-date picture to every recipient. Returns
     (sent count, per-recipient error strings) -- one bad number doesn't stop
     the others."""
     image_url = create_signed_url(supabase_url, service_role_key, f"{client_id}/png/mtd.png", expires_in=3600)
-    caption = f"{display_name} - month-to-date report"
+    caption = f"{display_name} - {period_label}"
     sent, errors = 0, []
     for phone in recipients:
         try:

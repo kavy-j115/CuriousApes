@@ -26,7 +26,7 @@ def _store_today(conn, client_id: str):
     cur.execute("SELECT (now() AT TIME ZONE timezone)::date FROM clients WHERE client_id = %s;", (client_id,))
     row = cur.fetchone()
     cur.close()
-    return row[0]
+    return row[0] - timedelta(days=1)  # last complete day: the current day is left out until it is whole
 
 
 def generate_summaries(conn, client_id, display_name, supabase_url, service_role_key, report_config=None) -> list[str]:

@@ -30,7 +30,7 @@ query RunShopifyQL($q: String!) {
 """
 
 SALES_COLUMNS = ["orders", "gross_sales", "discounts", "returns", "net_sales", "shipping_charges", "taxes", "total_sales"]
-SESSION_COLUMNS = ["sessions", "added_to_cart", "reached_checkout"]
+SESSION_COLUMNS = ["sessions", "sessions_with_cart_additions", "sessions_that_reached_checkout"]
 
 
 class ShopifyAnalyticsError(Exception):
@@ -110,8 +110,8 @@ def fetch_daily_sessions(store_domain: str, access_token: str, since: str, until
         {
             "report_date": str(r["day"])[:10],
             "sessions": int(round(_number(r["sessions"]))),
-            "added_to_cart": int(round(_number(r["added_to_cart"]))),
-            "reached_checkout": int(round(_number(r["reached_checkout"]))),
+            "added_to_cart": int(round(_number(r["sessions_with_cart_additions"]))),
+            "reached_checkout": int(round(_number(r["sessions_that_reached_checkout"]))),
         }
         for r in rows
     ]

@@ -10,15 +10,17 @@ function isoDaysAgo(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Everything stops at yesterday: the current day is left out until it is whole.
+const YESTERDAY = () => isoDaysAgo(1);
+
 function monthStart(): string {
-  return `${isoDaysAgo(0).slice(0, 8)}01`;
+  return `${YESTERDAY().slice(0, 8)}01`;
 }
 
 const PRESETS: { label: string; from: () => string; to: () => string }[] = [
-  { label: "Today", from: () => isoDaysAgo(0), to: () => isoDaysAgo(0) },
-  { label: "7D", from: () => isoDaysAgo(6), to: () => isoDaysAgo(0) },
-  { label: "30D", from: () => isoDaysAgo(29), to: () => isoDaysAgo(0) },
-  { label: "90D", from: () => isoDaysAgo(89), to: () => isoDaysAgo(0) },
+  { label: "7D", from: () => isoDaysAgo(7), to: () => YESTERDAY() },
+  { label: "30D", from: () => isoDaysAgo(30), to: () => YESTERDAY() },
+  { label: "90D", from: () => isoDaysAgo(90), to: () => YESTERDAY() },
 ];
 
 // Client selection lives in the top bar's ClientDropdown now, so this only
@@ -60,13 +62,13 @@ export default function ReportDateControls({ defaultRange = "month" }: { default
         <button
           onClick={() => {
             setCustomOpen(false);
-            navigate({ from: monthStart(), to: isoDaysAgo(0) });
+            navigate({ from: monthStart(), to: YESTERDAY() });
           }}
           className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-            (isThisMonth || (from === monthStart() && to === isoDaysAgo(0))) && !customOpen ? "bg-accent text-white" : "text-zinc-400 hover:text-zinc-100"
+            (isThisMonth || (from === monthStart() && to === YESTERDAY())) && !customOpen ? "bg-accent text-white" : "text-zinc-400 hover:text-zinc-100"
           }`}
         >
-          This month
+          {new Date().getDate() === 1 ? "Last month" : "This month"}
         </button>
         {PRESETS.map((p) => (
           <button
@@ -98,9 +100,9 @@ export default function ReportDateControls({ defaultRange = "month" }: { default
 
       {(customOpen || (from && !activePreset)) && (
         <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1">
-          <input type="date" value={from} onChange={(e) => navigate({ from: e.target.value })} className={inputClass} aria-label="From date" />
+          <input type="date" max={YESTERDAY()} value={from} onChange={(e) => navigate({ from: e.target.value })} className={inputClass} aria-label="From date" />
           <span className="text-zinc-600">–</span>
-          <input type="date" value={to} onChange={(e) => navigate({ to: e.target.value })} className={inputClass} aria-label="To date" />
+          <input type="date" max={YESTERDAY()} value={to} onChange={(e) => navigate({ to: e.target.value })} className={inputClass} aria-label="To date" />
           {(from || to) && (
             <button
               onClick={() => {

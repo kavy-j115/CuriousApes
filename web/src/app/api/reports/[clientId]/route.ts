@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
-import { todayIn } from "@/lib/dashboardData";
+import { lastCompleteDay } from "@/lib/dashboardData";
 import { ReportRow, computeTotal } from "@/lib/reportMath";
 import {
   ALL_METRIC_KEYS,
@@ -60,9 +60,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ clie
   const search = new URL(request.url).searchParams;
   const fromParam = search.get("from");
   const toParam = search.get("to");
-  const today = todayIn(client.timezone);
-  const from = fromParam && DATE_RE.test(fromParam) ? fromParam : `${today.slice(0, 8)}01`;
-  const to = toParam && DATE_RE.test(toParam) ? toParam : fromParam && DATE_RE.test(fromParam) ? fromParam : today;
+  // Completed days only, same as the Reports page.
+  const lastDay = lastCompleteDay(client.timezone);
+  const from = fromParam && DATE_RE.test(fromParam) ? fromParam : `${lastDay.slice(0, 8)}01`;
+  const requestedTo = toParam && DATE_RE.test(toParam) ? toParam : fromParam && DATE_RE.test(fromParam) ? fromParam : lastDay;
+  const to = requestedTo > lastDay ? lastDay : requestedTo;
 
   const { data, error } = await supabase
     .from("daily_report_metrics")
