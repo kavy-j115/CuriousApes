@@ -11,6 +11,7 @@ docs/scheduling.md).
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import sys
@@ -25,6 +26,7 @@ import psycopg2
 import psycopg2.extras
 
 from src.config.clients import load_all, get_value, resolve_secret
+from src.connectors.meta_gate import META_GATE
 from src.config.whatsapp_config import load_whatsapp_config
 from src.config.report_config import load_report_config
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
@@ -34,7 +36,7 @@ from src.ingestion.shopify_analytics import sync_shopify_analytics
 from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
 from src.reports.storage import ensure_bucket_exists, upload_report
-from src.analytics.alerts import check_metric_alerts, save_alerts, save_sync_failure_alert
+from src.analytics.alerts import Alert, check_metric_alerts, save_alerts, save_sync_failure_alert
 from src.analytics.data_quality import run_data_quality_checks
 from src.analytics.anomaly import check_anomalies
 from src.notifications.dispatch import send_pending_alerts
@@ -53,6 +55,31 @@ class StepResult:
     detail: str
 
 
+def warn_expiring_meta_logins(conn) -> None:
+    """A Facebook login (Connect Meta) lasts about 60 days. Within a week of expiry,
+    every client that depends on it gets an alert, so a reconnect is never a surprise."""
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT c.fb_user_name, c.expires_at, cl.client_id
+            FROM meta_connections c
+            JOIN meta_ad_accounts a ON a.connection_id = c.id
+            JOIN clients cl ON cl.meta_ad_account_id = a.account_id
+            WHERE c.expires_at IS NOT NULL AND c.expires_at < now() + interval '7 days';
+            """
+        )
+        rows = cur.fetchall()
+        cur.close()
+        for name, expires_at, client_id in rows:
+            state = "expired" if expires_at < datetime.now(timezone.utc) else "expires"
+            message = f"The Meta login for {name or 'a profile'} {state} on {expires_at:%d %b %Y} -- reconnect it on the Meta Accounts page."
+            save_alerts(conn, client_id, date.today(), [Alert("meta_token_expiring", message)])
+            print(f"  [WARN] {client_id}: {message}")
+    except Exception as e:  # never let a warning stop the run
+        print(f"  [WARN] couldn't check Meta login expiry: {e}")
+
+
 def _last_complete_day(conn, client_id: str) -> date:
     """Yesterday in the client's own time zone -- the latest day that is whole."""
     cur = conn.cursor()
@@ -63,7 +90,8 @@ def _last_complete_day(conn, client_id: str) -> date:
 
 
 def run_for_client(
-    conn, config: dict, since: str, whatsapp_config: dict | None, meta_since: str | None = None, full_transform: bool = False
+    conn, config: dict, since: str, whatsapp_config: dict | None, meta_since: str | None = None, full_transform: bool = False,
+    bulk: bool = False,
 ) -> list[StepResult]:
     client_id = config["client_id"]
     results: list[StepResult] = []
@@ -75,7 +103,7 @@ def run_for_client(
             # Taken before the sync so the transform below can pick up exactly
             # the orders this run saved (a few minutes of slack for clock drift).
             sync_started = datetime.now(timezone.utc) - timedelta(minutes=5)
-            count = sync_shopify_orders(conn, client_id, store_domain, shopify_token, created_at_min=since)
+            count = sync_shopify_orders(conn, client_id, store_domain, shopify_token, created_at_min=since, bulk=bulk)
             results.append(StepResult("Shopify sync", "ok", f"{count} orders"))
             try:
                 t_count = transform_orders(conn, client_id, None if full_transform else sync_started)
@@ -112,12 +140,23 @@ def run_for_client(
     if ad_account_id and meta_token:
         try:
             until = _last_complete_day(conn, client_id).isoformat()
-            count = sync_meta_insights(conn, client_id, ad_account_id, meta_token, meta_since or since, until)
+            # One ad account at a time, with a 10 ms gap when switching between clients
+            # (clients run in parallel; Meta calls are deliberately not).
+            with META_GATE.use(ad_account_id):
+                count = sync_meta_insights(conn, client_id, ad_account_id, meta_token, meta_since or since, until)
             results.append(StepResult("Meta sync", "ok", f"{count} daily rows"))
         except Exception as e:
             results.append(StepResult("Meta sync", "error", str(e)))
     else:
-        results.append(StepResult("Meta sync", "skipped", "not configured for this client"))
+        results.append(
+            StepResult(
+                "Meta sync",
+                "skipped",
+                "no Meta connection covers this client's ad account -- connect it on the Meta Accounts page"
+                if ad_account_id
+                else "not configured for this client",
+            )
+        )
 
     property_id = get_value(config, "ga4", "property_id")
     ga4_service_account_json = resolve_secret(conn, config, "ga4", "service_account_secret")
@@ -301,6 +340,17 @@ def run_for_client(
                 results.append(StepResult("WhatsApp daily report", "error", err))
             if sent:
                 results.append(StepResult("WhatsApp daily report", "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
+        # Weekly report: on Mondays the client also gets the last 7 completed days
+        # (the previous Monday-Sunday) as a picture.
+        if date.today().weekday() == 0 and "7d" in views and whatsapp_config and recipients:
+            sent, send_errors = push_daily_report(
+                client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key,
+                "weekly report (" + views['7d'].split('(')[-1], "7d",
+            )
+            for err in send_errors:
+                results.append(StepResult("WhatsApp weekly report", "error", err))
+            if sent:
+                results.append(StepResult("WhatsApp weekly report", "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
 
     return results
 
@@ -328,8 +378,14 @@ def main():
         help="re-process every stored order, not just the ones this run fetched (first backfill, or after changing the transform)",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="how many clients to process at the same time (default 4; use 1 for one after another)",
+    )
+    parser.add_argument(
         "--client",
-        help="sync only this client_id (still requires its sync switch to be on); default is every enabled client",
+        help="sync only this client_id, or several separated by commas (each still needs its sync switch on); default is every enabled client",
     )
     args = parser.parse_args()
 
@@ -343,9 +399,10 @@ def main():
     clients = load_all(conn)
 
     if args.client:
-        clients = [c for c in clients if c["client_id"] == args.client]
+        wanted = {x.strip() for x in args.client.split(",") if x.strip()}
+        clients = [c for c in clients if c["client_id"] in wanted]
         if not clients:
-            print(f"No client with client_id '{args.client}' -- nothing to do.")
+            print(f"No client matching '{args.client}' -- nothing to do.")
             return
 
     if not clients:
@@ -353,16 +410,77 @@ def main():
         return
 
     whatsapp_config = load_whatsapp_config(conn)
+    warn_expiring_meta_logins(conn)
+
+    def process(config: dict, client_since: str, client_meta_since: str | None, owed, new_client: bool) -> list[StepResult]:
+        """One client from start to finish, on its OWN database connection
+        (a connection can't be shared between threads)."""
+        worker_conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        try:
+            results = run_for_client(worker_conn, config, client_since, whatsapp_config, client_meta_since, args.full_transform, bulk=new_client or bool(owed))
+            if new_client and any(r.step == "Shopify sync" and r.status == "ok" for r in results):
+                cur = worker_conn.cursor()
+                cur.execute("UPDATE clients SET initial_sync_done = true WHERE client_id = %s;", (config["client_id"],))
+                worker_conn.commit()
+                cur.close()
+            if owed and not any(r.status == "error" and r.step in ("Shopify sync", "Shopify analytics", "Meta sync") for r in results):
+                cur = worker_conn.cursor()
+                cur.execute("UPDATE clients SET backfill_from = NULL WHERE client_id = %s;", (config["client_id"],))
+                worker_conn.commit()
+                cur.close()
+            return results
+        finally:
+            worker_conn.close()
 
     any_errors = False
+    jobs = []
     for config in clients:
+        if config.get("paused"):
+            print_summary(config["client_id"], [StepResult("Sync", "skipped", "client is paused (disconnected)")])
+            continue
         if config.get("sync_enabled") is False:
             print_summary(config["client_id"], [StepResult("Sync", "skipped", "switched off for this client")])
             continue
-        results = run_for_client(conn, config, since, whatsapp_config, meta_since, args.full_transform)
-        print_summary(config["client_id"], results)
-        if any(r.status == "error" for r in results):
-            any_errors = True
+        # A reconnected client owes the days it was paused: start from the day it
+        # was paused (never later than the normal window), for every source.
+        owed = config.get("backfill_from")
+        client_since = min(since, owed.isoformat()) if owed else since
+        client_meta_since = min(meta_since or since, owed.isoformat()) if owed else meta_since
+        # A reconnected client gets ONLY the days it was paused (from the day before it
+        # was paused). A new or reconnected client is backfilled with Shopify's bulk export (one
+        # file, not hundreds of pages), never further back than 60 days -- Shopify's
+        # order window -- whenever it joined or however long it was paused.
+        # A brand-new client gets only 3 days of Meta.
+        floor = (date.today() - timedelta(days=60)).isoformat()
+        new_client = not config.get("initial_sync_done", True)
+        if new_client:
+            # How far back is chosen per client when it is added (0 = this month so far).
+            cap_days = config.get("initial_backfill_days", 60)
+            if owed:  # the start date picked in the "Sync now" pop-up
+                client_since = max(owed.isoformat(), floor)
+            elif cap_days == 0:
+                client_since = (date.today() - timedelta(days=1)).replace(day=1).isoformat()
+            else:
+                client_since = (date.today() - timedelta(days=cap_days)).isoformat()
+            client_meta_since = (date.today() - timedelta(days=3)).isoformat()
+        elif owed:
+            client_since = max(client_since, floor)
+            client_meta_since = max(client_meta_since or client_since, floor)
+        jobs.append((config, client_since, client_meta_since, owed, new_client))
+
+    # Clients are independent, so several run at once; each prints as it finishes.
+    workers = max(1, min(args.workers, len(jobs) or 1))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(process, *job): job[0]["client_id"] for job in jobs}
+        for future in as_completed(futures):
+            client_id = futures[future]
+            try:
+                results = future.result()
+            except Exception as e:  # a crash in one client never stops the others
+                results = [StepResult("Pipeline", "error", str(e))]
+            print_summary(client_id, results)
+            if any(r.status == "error" for r in results):
+                any_errors = True
 
     conn.close()
     print(f"\nCompleted: {date.today().isoformat()}")

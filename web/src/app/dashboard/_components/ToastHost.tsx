@@ -6,13 +6,16 @@ import type { ToastType } from "@/lib/notify";
 
 type Toast = { id: number; message: string; type: ToastType };
 
+// Module-level so ids stay unique even if the effect below re-runs (hot reload, strict mode)
+// while a toast is still on screen.
+let nextId = 0;
+
 // Shows messages sent through notify() (src/lib/notify.ts): a short "Saved"
 // style popup that clears itself after a few seconds.
 export default function ToastHost() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
-    let nextId = 0;
     function onToast(e: Event) {
       const { message, type } = (e as CustomEvent<{ message: string; type: ToastType }>).detail;
       const id = nextId++;

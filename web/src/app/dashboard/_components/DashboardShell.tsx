@@ -42,7 +42,7 @@ export default function DashboardShell({
 
   return (
     <div className="flex min-h-screen bg-black text-zinc-50">
-      <GuidedTour role={profile.role} autoStart={showTour} />
+      <GuidedTour role={profile.role} autoStart={showTour} seenPages={profile.seen_page_tours} pageToursDisabled={profile.page_tours_disabled} />
       <ToastHost />
       <div className="hidden lg:block">
         <Sidebar role={profile.role} />

@@ -16,6 +16,7 @@ export const getClients = cache(async () => {
   const { data } = await supabase
     .from("clients")
     .select("client_id, display_name, report_config, timezone")
+    .is("paused_at", null) // paused (disconnected) clients are hidden from every screen
     .order("display_name");
   return data ?? [];
 });

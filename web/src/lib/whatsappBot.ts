@@ -42,7 +42,7 @@ async function brandsForNumber(from: string): Promise<Brand[]> {
   const add = (c: { client_id: unknown; display_name: unknown }) =>
     found.set(c.client_id as string, { client_id: c.client_id as string, display_name: c.display_name as string });
 
-  const { data: clients } = await admin.from("clients").select("client_id, display_name, whatsapp_recipients");
+  const { data: clients } = await admin.from("clients").select("client_id, display_name, whatsapp_recipients").is("paused_at", null);
   for (const c of clients ?? []) {
     if (((c.whatsapp_recipients as string[]) ?? []).some((p) => digits(p) === wanted)) add(c);
   }

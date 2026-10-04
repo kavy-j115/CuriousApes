@@ -1,7 +1,7 @@
 "use client";
 
 import { notify, withToast } from "@/lib/notify";
-import { useState, useTransition } from "react";
+import { memo, useState, useTransition } from "react";
 import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import {
   updateUserRole,
@@ -18,7 +18,7 @@ import type { Role } from "@/lib/auth/profile";
 
 type Client = { client_id: string; display_name: string };
 type AccessRow = { client_id: string; expires_at: string | null };
-type UserWithAccess = {
+export type UserWithAccess = {
   id: string;
   email: string | null;
   display_name: string | null;
@@ -31,7 +31,7 @@ function hoursLeft(expiresAt: string): number {
   return Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 3_600_000));
 }
 
-export default function UserRow({
+function UserRow({
   user,
   clients,
   currentUserId,
@@ -47,8 +47,11 @@ export default function UserRow({
   const [collabClient, setCollabClient] = useState("");
   const [phone, setPhone] = useState(user.phone);
   const [editingPhone, setEditingPhone] = useState(false);
+  const [pendingAdmin, setPendingAdmin] = useState<{ kind: "role"; role: Role } | { kind: "delete" } | null>(null);
+  const [adminPassword, setAdminPassword] = useState("");
   const [newPassword, setNewPassword] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [accessOpen, setAccessOpen] = useState(false);
   const [deleted, setDeleted] = useState<{ fullyDeleted: boolean } | null>(null);
   const isSelf = user.id === currentUserId;
 
@@ -57,9 +60,36 @@ export default function UserRow({
   );
 
   function handleRoleChange(newRole: Role) {
+    // Anything that involves the admin role needs an admin password first.
+    if (user.role === "admin" || newRole === "admin") {
+      setAdminPassword("");
+      setPendingAdmin({ kind: "role", role: newRole });
+      return;
+    }
     setRole(newRole);
     startTransition(async () => {
       await withToast(() => updateUserRole(user.id, newRole), "Role updated");
+    });
+  }
+
+  function confirmAdminAction() {
+    if (!pendingAdmin) return;
+    startTransition(async () => {
+      try {
+        if (pendingAdmin.kind === "role") {
+          await updateUserRole(user.id, pendingAdmin.role, adminPassword);
+          setRole(pendingAdmin.role);
+          notify("Role updated");
+        } else {
+          const result = await deleteUserRecord(user.id, adminPassword);
+          setDeleted(result);
+          notify("User deleted");
+        }
+        setPendingAdmin(null);
+        setAdminPassword("");
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't confirm that.", "error");
+      }
     });
   }
 
@@ -114,6 +144,11 @@ export default function UserRow({
   }
 
   function handleDelete() {
+    if (user.role === "admin") {
+      setAdminPassword("");
+      setPendingAdmin({ kind: "delete" });
+      return;
+    }
     if (!confirm(`Delete ${user.email ?? "this user"}? This can't be undone.`)) return;
     startTransition(async () => {
       const result = await deleteUserRecord(user.id);
@@ -133,12 +168,21 @@ export default function UserRow({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-900 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-zinc-100">
-            {user.display_name || "—"} {isSelf && <span className="text-xs text-zinc-500">(you)</span>}
-          </p>
+    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+      <div className="flex flex-wrap items-start justify-between gap-4 p-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-sm font-semibold text-accent">
+            {(user.display_name || user.email || "?").charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-zinc-50">
+              {user.display_name || "—"} {isSelf && <span className="text-xs font-normal text-zinc-500">(you)</span>}
+            </p>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${role === "admin" ? "bg-status-warning/15 text-status-warning" : "bg-accent/15 text-accent"}`}>
+              {role === "admin" ? "Admin" : "User"}
+            </span>
+          </div>
           <p className="text-xs text-zinc-500">{user.email}</p>
           <div className="mt-1 flex items-center gap-1.5 text-xs">
             {editingPhone ? (
@@ -171,6 +215,7 @@ export default function UserRow({
               </>
             )}
           </div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <span title={isSelf ? "Can't change your own role" : undefined} className={isSelf || pending ? "pointer-events-none opacity-50" : ""}>
@@ -192,8 +237,51 @@ export default function UserRow({
         </div>
       </div>
 
+      {pendingAdmin && (
+        <div className="mx-4 mb-4 rounded-lg border border-status-warning/40 bg-status-warning/10 p-3">
+          <p className="text-sm font-medium text-status-warning">
+            {pendingAdmin.kind === "delete"
+              ? `Delete the admin ${user.email ?? ""}?`
+              : pendingAdmin.role === "admin"
+                ? `Make ${user.email ?? "this user"} an admin?`
+                : `Remove admin rights from ${user.email ?? "this admin"}?`}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">This needs an admin password. Enter the password of any admin account to confirm.</p>
+          <form
+            className="mt-2 flex flex-wrap items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              confirmAdminAction();
+            }}
+          >
+            <input
+              type="password"
+              autoFocus
+              autoComplete="off"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="Admin password"
+              className="w-56 rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 focus:border-accent focus:outline-none"
+            />
+            <button type="submit" disabled={pending || !adminPassword} className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+              {pending ? "Checking…" : "Confirm"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingAdmin(null);
+                setAdminPassword("");
+              }}
+              className="text-xs text-zinc-400 hover:text-zinc-200"
+            >
+              Cancel
+            </button>
+          </form>
+        </div>
+      )}
+
       {newPassword && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded border border-status-good/30 bg-status-good/10 p-2.5 text-xs text-status-good">
+        <div className="mx-4 mb-4 flex flex-wrap items-center gap-2 rounded border border-status-good/30 bg-status-good/10 p-2.5 text-xs text-status-good">
           <span>
             Temporary password: <span className="font-mono">{newPassword}</span>
           </span>
@@ -213,9 +301,21 @@ export default function UserRow({
       )}
 
       {role !== "admin" && (
-        <div className="mt-3 flex flex-col gap-3 border-t border-zinc-900 pt-3">
+        <div className="border-t border-zinc-900 px-4 py-2">
+          <button
+            onClick={() => setAccessOpen((v) => !v)}
+            aria-expanded={accessOpen}
+            className={`text-xs font-medium ${accessOpen ? "text-accent" : "text-zinc-400 hover:text-zinc-200"}`}
+          >
+            Access ({permanentIds.length}{temporary.length ? ` + ${temporary.length} collab` : ""})
+          </button>
+        </div>
+      )}
+
+      {role !== "admin" && accessOpen && (
+        <div className="flex flex-col gap-4 border-t border-zinc-900 bg-black/30 p-4">
           <div>
-            <p className="mb-1.5 text-xs font-medium text-zinc-400">Clients</p>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Clients</p>
             <div className="flex flex-wrap items-center gap-2">
               <MultiSelect
                 placeholder="No clients"
@@ -231,7 +331,7 @@ export default function UserRow({
 
           {role === "user" && (
             <div>
-              <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h)</p>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Collab (24h)</p>
               <div className="flex flex-col gap-1.5">
                 {temporary.map((t) => {
                   const client = clients.find((c) => c.client_id === t.client_id);
@@ -268,3 +368,6 @@ export default function UserRow({
     </div>
   );
 }
+
+// Skip re-rendering every card when only one row (or the search box) changes.
+export default memo(UserRow);

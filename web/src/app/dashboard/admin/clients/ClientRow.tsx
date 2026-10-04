@@ -3,11 +3,16 @@
 import Checkbox from "../../_components/Checkbox";
 import Select from "../../_components/Select";
 import MultiSelect from "../../_components/MultiSelect";
+import Link from "next/link";
 import { notify, withToast } from "@/lib/notify";
-import { useState, useTransition } from "react";
-import { Trash2, KeyRound, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import SyncNowModal from "./SyncNowModal";
+import { Trash2, KeyRound, Copy, Check, Link2 } from "lucide-react";
 import {
   deleteClientRecord,
+  pauseClient,
+  resumeClient,
   updateClientReportConfig,
   resetUserPassword,
   updateClientNotifications,
@@ -23,7 +28,7 @@ import { validateFormula } from "@/lib/formulaEval";
 
 type AlertThresholds = { revenue_change_pct?: number; cac_change_pct?: number; roas_change_pct?: number } | null;
 
-type ClientRowData = {
+export type ClientRowData = {
   client_id: string;
   display_name: string;
   created_at: string;
@@ -35,6 +40,11 @@ type ClientRowData = {
   ga4_property_id: string | null;
   shopify_connected_at: string | null;
   sync_enabled: boolean;
+  paused_at: string | null;
+  pause_reason: string | null;
+  initial_sync_done: boolean;
+  backfill_from?: string | null;
+  meta_account_name?: string | null;
 };
 
 type AccessUser = { id: string; label: string; role: string };
@@ -42,6 +52,35 @@ type AccessRow = { user_id: string; expires_at: string | null };
 
 function hoursLeft(expiresAt: string): number {
   return Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 3_600_000));
+}
+
+type Tone = "good" | "warn" | "bad" | "muted";
+const TONES: Record<Tone, string> = {
+  good: "bg-status-good/15 text-status-good",
+  warn: "bg-status-warning/15 text-status-warning",
+  bad: "bg-status-bad/15 text-status-bad",
+  muted: "bg-zinc-900 text-zinc-400",
+};
+
+function Dot({ on }: { on: boolean }) {
+  return <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-status-good" : "bg-zinc-600"}`} />;
+}
+
+function Chip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${TONES[tone]}`}>{children}</span>;
+}
+
+function Section({ open, onClick, children }: { open: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+        open ? "bg-accent/15 text-accent" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function ClientRow({
@@ -57,7 +96,13 @@ export default function ClientRow({
   clientLogin: string | null;
   clientLoginId: string | null;
 }) {
-  const [columnsOpen, setColumnsOpen] = useState(false);
+  // One panel open at a time: opening a tab closes the others.
+  const [openTab, setOpenTab] = useState<"report" | "alerts" | "access" | "connections" | null>(null);
+  const columnsOpen = openTab === "report";
+  const notificationsOpen = openTab === "alerts";
+  const accessOpen = openTab === "access";
+  const connectionsOpen = openTab === "connections";
+  const toggleTab = (tab: NonNullable<typeof openTab>) => setOpenTab((cur) => (cur === tab ? null : tab));
   const [useDefault, setUseDefault] = useState(!client.report_config);
   const [enabled, setEnabled] = useState<Set<MetricKey>>(
     new Set(client.report_config ? client.report_config.columns.map((c) => c.key) : [])
@@ -68,12 +113,10 @@ export default function ClientRow({
   const [headerColor, setHeaderColor] = useState(client.report_config?.headerColor ? `#${client.report_config.headerColor.replace(/^#/, "")}` : "");
   const [idealRoas, setIdealRoas] = useState(client.report_config?.idealRoas ? String(client.report_config.idealRoas) : "");
   const [derivedColumns, setDerivedColumns] = useState<DerivedColumn[]>(client.report_config?.derivedColumns ?? []);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [revenuePct, setRevenuePct] = useState(String(client.alert_thresholds?.revenue_change_pct ?? ""));
   const [cacPct, setCacPct] = useState(String(client.alert_thresholds?.cac_change_pct ?? ""));
   const [roasPct, setRoasPct] = useState(String(client.alert_thresholds?.roas_change_pct ?? ""));
   const [recipients, setRecipients] = useState((client.whatsapp_recipients ?? []).join(", "));
-  const [accessOpen, setAccessOpen] = useState(false);
   const permanentUserIds = access.filter((a) => !a.expires_at).map((a) => a.user_id);
   const temporaryAccess = access.filter((a) => a.expires_at);
   const [accessSelected, setAccessSelected] = useState<string[]>(permanentUserIds);
@@ -81,9 +124,7 @@ export default function ClientRow({
   const userLabel = (id: string) => users.find((u) => u.id === id)?.label ?? id;
   const accessDirty = accessSelected.length !== permanentUserIds.length || permanentUserIds.some((id) => !accessSelected.includes(id));
   const collabCandidates = users.filter((u) => u.role === "user" && !access.some((a) => a.user_id === u.id));
-  const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [storeDomain, setStoreDomain] = useState(client.shopify_store_domain ?? "");
-  const [metaAccount, setMetaAccount] = useState(client.meta_ad_account_id ?? "");
   const [ga4Property, setGa4Property] = useState(client.ga4_property_id ?? "");
   const [installLink, setInstallLink] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -91,6 +132,29 @@ export default function ClientRow({
   const [pending, startTransition] = useTransition();
   const [loginPassword, setLoginPassword] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(false);
+  const router = useRouter();
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncDefault, setSyncDefault] = useState<string | null>(null);
+  // A new client whose Shopify is connected but has not had its first sync: offer it once.
+  const needsFirstSync = !!client.shopify_connected_at && !client.initial_sync_done && !client.paused_at;
+  useEffect(() => {
+    if (!needsFirstSync) return;
+    try {
+      if (sessionStorage.getItem(`syncPrompt:${client.client_id}`)) return;
+      sessionStorage.setItem(`syncPrompt:${client.client_id}`, "1");
+    } catch {
+      /* private mode: just show it */
+    }
+    setSyncDefault(client.backfill_from ?? null);
+    setSyncOpen(true);
+  }, [needsFirstSync, client.client_id, client.backfill_from]);
+  // The store owner installs the app in their own tab: refresh when this tab is focused again.
+  useEffect(() => {
+    if (client.shopify_connected_at || !client.shopify_store_domain) return;
+    const onFocus = () => router.refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [client.shopify_connected_at, client.shopify_store_domain, router]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function toggleMetric(key: MetricKey) {
@@ -170,8 +234,35 @@ export default function ClientRow({
     });
   }
 
+  function handlePause() {
+    if (!confirm(`Disconnect ${client.display_name}? It is hidden from every screen and nothing is fetched. Credentials and stored data are kept, and Reconnect brings it back and fills the missed days. Nothing is changed on Shopify or Meta.`)) return;
+    startTransition(async () => {
+      await withToast(() => pauseClient(client.client_id), "Client disconnected");
+    });
+  }
+
+  function handleResume() {
+    startTransition(async () => {
+      try {
+        const res = await resumeClient(client.client_id);
+        notify("Client reconnected");
+        setSyncDefault(res?.backfillFrom ?? null);
+        setSyncOpen(true);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't reconnect.", "error");
+      }
+    });
+  }
+
   function handleDelete() {
-    if (!confirm(`Delete ${client.display_name}? Fails if they still have synced data.`)) return;
+    const typed = window.prompt(
+      `Permanently delete ${client.display_name}? This removes the client, ALL its stored data and its saved credentials, and cannot be undone.\n\nReminder: nothing is changed on Shopify or Meta. To end access there too, remove the app from the store's Apps settings in Shopify and stop sharing the ad account in Meta Business Settings.\n\nType the client ID (${client.client_id}) to confirm.`
+    );
+    if (typed === null) return;
+    if (typed.trim() !== client.client_id) {
+      notify("That doesn't match the client ID -- nothing was deleted.", "error");
+      return;
+    }
     setDeleteError(null);
     startTransition(async () => {
       try {
@@ -211,7 +302,6 @@ export default function ClientRow({
       try {
         await updateClientConnections(client.client_id, {
           shopifyStoreDomain: storeDomain,
-          metaAdAccountId: metaAccount,
           ga4PropertyId: ga4Property,
         });
         notify("Connections saved");
@@ -264,71 +354,100 @@ export default function ClientRow({
   if (deleted) return null;
 
   return (
-    <>
-      <tr className="border-b border-zinc-900 text-zinc-300">
-        <td className="px-3 py-1.5 font-mono text-xs">{client.client_id}</td>
-        <td className="px-3 py-1.5">
-          {client.display_name}
-          <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-            {clientLogin ?? "No client login"}
-            {clientLoginId && (
-              <button onClick={resetClientLoginPassword} disabled={pending} aria-label="Reset client password" title="Reset password" className="rounded p-1 text-zinc-500 hover:bg-zinc-900 hover:text-accent">
-                <KeyRound size={12} />
-              </button>
-            )}
+    <div className={`overflow-hidden rounded-xl border bg-zinc-950 ${client.paused_at ? "border-zinc-900" : "border-zinc-800"}`}>
+      {syncOpen && (
+        <SyncNowModal clientId={client.client_id} name={client.display_name} defaultFrom={syncDefault} onClose={() => setSyncOpen(false)} />
+      )}
+      <div className={`flex flex-wrap items-start justify-between gap-4 p-4 ${client.paused_at ? "opacity-75" : ""}`}>
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-sm font-semibold text-accent">
+            {client.display_name.charAt(0).toUpperCase()}
           </span>
-          {loginPassword && (
-            <span className="mt-1 flex flex-wrap items-center gap-1.5 rounded border border-status-good/30 bg-status-good/10 px-2 py-1 text-xs text-status-good">
-              Temporary password: <span className="font-mono">{loginPassword}</span>
-              <button
-                onClick={() => {
-                  void navigator.clipboard.writeText(loginPassword);
-                  notify("Password copied");
-                }}
-                className="rounded border border-status-good/40 px-1.5 hover:bg-status-good/10"
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-zinc-50">{client.display_name}</p>
+              <span className="font-mono text-[11px] text-zinc-500">{client.client_id}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
+              {client.paused_at && (
+                <Chip tone="warn">
+                  Disconnected {new Date(client.paused_at).toLocaleDateString()}
+                  {client.pause_reason === "meta_access_lost" ? " · Meta access lost" : ""}
+                </Chip>
+              )}
+              <span className="inline-flex items-center gap-1.5">
+                <Dot on={!!client.shopify_connected_at} />
+                {client.shopify_connected_at ? "Shopify" : "Shopify not connected"}
+              </span>
+              <Link
+                href={`/dashboard/admin/meta?client=${client.client_id}`}
+                title={client.meta_ad_account_id ? "Change the linked ad account" : "Link an ad account"}
+                className="inline-flex items-center gap-1.5 hover:text-accent"
               >
-                Copy
-              </button>
-              <button onClick={() => setLoginPassword(null)} className="text-zinc-500 hover:text-zinc-300">
-                Hide
-              </button>
-            </span>
-          )}
-        </td>
-        <td className="px-3 py-1.5">
-          <button onClick={() => setColumnsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
-            {columnsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} columns
-          </button>
-        </td>
-        <td className="px-3 py-1.5">
-          <button onClick={() => setNotificationsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
-            {notificationsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} alerts/WhatsApp
-          </button>
-        </td>
-        <td className="px-3 py-1.5">
-          <button onClick={() => setAccessOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
-            {accessOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {access.length} {access.length === 1 ? "user" : "users"}
-          </button>
-        </td>
-        <td className="px-3 py-1.5">
-          <button onClick={() => setConnectionsOpen((v) => !v)} className="flex items-center gap-1 text-xs text-accent hover:underline">
-            {connectionsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} connections
-          </button>
-        </td>
-        <td className="px-3 py-1.5">
+                <Dot on={!!client.meta_ad_account_id} />
+                {client.meta_ad_account_id ? `Meta: ${client.meta_account_name ?? client.meta_ad_account_id}` : "Meta not linked"}
+              </Link>
+              {needsFirstSync && (
+                <button onClick={() => { setSyncDefault(client.backfill_from ?? null); setSyncOpen(true); }} className="font-medium text-accent hover:underline">
+                  Sync now
+                </button>
+              )}
+            </div>
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500">
+              {clientLogin ?? "No client login"}
+              {clientLoginId && (
+                <button onClick={resetClientLoginPassword} disabled={pending} aria-label="Reset client password" title="Reset password" className="rounded p-1 text-zinc-500 hover:bg-zinc-900 hover:text-accent">
+                  <KeyRound size={12} />
+                </button>
+              )}
+            </div>
+            {loginPassword && (
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded border border-status-good/30 bg-status-good/10 px-2 py-1 text-xs text-status-good">
+                Temporary password: <span className="font-mono">{loginPassword}</span>
+                <button
+                  onClick={() => {
+                    void navigator.clipboard.writeText(loginPassword);
+                    notify("Password copied");
+                  }}
+                  className="rounded border border-status-good/40 px-1.5 hover:bg-status-good/10"
+                >
+                  Copy
+                </button>
+                <button onClick={() => setLoginPassword(null)} className="text-zinc-500 hover:text-zinc-300">
+                  Hide
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
           <span className={pending ? "pointer-events-none opacity-50" : ""}>
-            <Checkbox checked={client.sync_enabled} onChange={handleSyncToggle} label={client.sync_enabled ? "On" : "Off"} />
+            <Checkbox checked={client.sync_enabled && !client.paused_at} onChange={handleSyncToggle} label="Sync" />
           </span>
-        </td>
-        <td className="px-3 py-1.5 text-right">
-          <button onClick={handleDelete} disabled={pending} aria-label="Delete client" className="rounded p-1.5 text-zinc-500 hover:bg-status-bad/10 hover:text-status-bad">
-            <Trash2 size={14} />
+          {client.paused_at ? (
+            <button onClick={handleResume} disabled={pending} className="rounded-md border border-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:border-accent hover:text-accent disabled:opacity-40">
+              Reconnect
+            </button>
+          ) : (
+            <button onClick={handlePause} disabled={pending} className="rounded-md border border-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:border-status-warning hover:text-status-warning disabled:opacity-40">
+              Disconnect
+            </button>
+          )}
+          <button onClick={handleDelete} disabled={pending} aria-label="Delete client" title="Delete client" className="rounded-md p-1.5 text-zinc-500 hover:bg-status-bad/10 hover:text-status-bad">
+            <Trash2 size={15} />
           </button>
-        </td>
-      </tr>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1 border-t border-zinc-900 px-3 py-2">
+        <Section open={columnsOpen} onClick={() => toggleTab("report")}>Report</Section>
+        <Section open={notificationsOpen} onClick={() => toggleTab("alerts")}>Alerts and WhatsApp</Section>
+        <Section open={accessOpen} onClick={() => toggleTab("access")}>Access ({access.length})</Section>
+        <Section open={connectionsOpen} onClick={() => toggleTab("connections")}>Connections</Section>
+      </div>
       {columnsOpen && (
-        <tr className="border-b border-zinc-900">
-          <td colSpan={8} className="bg-black px-3 py-3">
+        <div className="border-t border-zinc-900 bg-black/50 px-4 py-4">
             {deleteError && <p className="mb-2 text-xs text-status-bad">{deleteError}</p>}
             <Checkbox className="mb-3" checked={useDefault} onChange={setUseDefault} label="Use default report configuration" />
 
@@ -443,12 +562,10 @@ export default function ClientRow({
             <button onClick={saveColumns} disabled={pending} className="mt-3 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               {pending ? "Saving…" : "Save columns"}
             </button>
-          </td>
-        </tr>
+        </div>
       )}
       {accessOpen && (
-        <tr className="border-b border-zinc-900">
-          <td colSpan={8} className="bg-black px-3 py-3">
+        <div className="border-t border-zinc-900 bg-black/50 px-4 py-4">
             <p className="mb-1.5 text-xs font-medium text-zinc-400">Users with access</p>
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <MultiSelect
@@ -491,12 +608,10 @@ export default function ClientRow({
                 </div>
               )}
             </div>
-          </td>
-        </tr>
+        </div>
       )}
       {connectionsOpen && (
-        <tr className="border-b border-zinc-900">
-          <td colSpan={8} className="bg-black px-3 py-3">
+        <div className="border-t border-zinc-900 bg-black/50 px-4 py-4">
             <div className="mb-3 flex flex-wrap items-end gap-3">
               <label className="text-xs text-zinc-400">
                 Shopify store domain
@@ -505,15 +620,6 @@ export default function ClientRow({
                   onChange={(e) => setStoreDomain(e.target.value)}
                   placeholder="brand.myshopify.com"
                   className="mt-1 block w-60 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100"
-                />
-              </label>
-              <label className="text-xs text-zinc-400">
-                Meta ad account ID
-                <input
-                  value={metaAccount}
-                  onChange={(e) => setMetaAccount(e.target.value)}
-                  placeholder="1234567890"
-                  className="mt-1 block w-44 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100"
                 />
               </label>
               <label className="text-xs text-zinc-400">
@@ -530,19 +636,54 @@ export default function ClientRow({
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <span className={client.shopify_connected_at ? "text-status-good" : "text-zinc-500"}>
-                {client.shopify_connected_at
-                  ? `Shopify connected ${new Date(client.shopify_connected_at).toLocaleDateString()}`
-                  : "Shopify not connected"}
-              </span>
-              <button
-                onClick={generateInstallLink}
-                disabled={pending || !client.shopify_store_domain}
-                className="rounded border border-zinc-800 px-2.5 py-1 text-zinc-200 hover:border-accent hover:text-accent disabled:opacity-40"
-              >
-                {client.shopify_connected_at ? "Reconnect Shopify" : "Connect Shopify"}
-              </button>
+            <div className="mt-4 divide-y divide-zinc-900 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Shopify</p>
+                  <p className={`mt-0.5 text-sm ${client.shopify_connected_at ? "text-status-good" : "text-zinc-400"}`}>
+                    {client.shopify_connected_at
+                      ? `Connected ${new Date(client.shopify_connected_at).toLocaleDateString()}`
+                      : "Not connected"}
+                  </p>
+                </div>
+                <button
+                  onClick={generateInstallLink}
+                  disabled={pending || !client.shopify_store_domain}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
+                    client.shopify_connected_at
+                      ? "border border-zinc-700 bg-zinc-900 text-zinc-100 hover:border-accent hover:text-accent"
+                      : "bg-accent text-white hover:opacity-90"
+                  }`}
+                >
+                  {client.shopify_connected_at ? "Reconnect Shopify" : "Connect Shopify"}
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Meta ad account</p>
+                  <p className={`mt-0.5 text-sm ${client.meta_ad_account_id ? "text-status-good" : "text-zinc-400"}`}>
+                    {client.meta_ad_account_id ? (
+                      <>
+                        {client.meta_account_name ?? "Linked"}
+                        <span className="ml-2 font-mono text-xs text-zinc-500">{client.meta_ad_account_id}</span>
+                      </>
+                    ) : (
+                      "Not linked"
+                    )}
+                  </p>
+                </div>
+                <Link
+                  href={`/dashboard/admin/meta?client=${client.client_id}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    client.meta_ad_account_id
+                      ? "border border-zinc-700 bg-zinc-900 text-zinc-100 hover:border-accent hover:text-accent"
+                      : "bg-accent text-white hover:opacity-90"
+                  }`}
+                >
+                  <Link2 size={13} />
+                  {client.meta_ad_account_id ? "Change ad account" : "Link ad account"}
+                </Link>
+              </div>
             </div>
 
             {installLink && (
@@ -554,12 +695,10 @@ export default function ClientRow({
               </div>
             )}
             {connectionError && <p className="mt-2 text-xs text-status-bad">{connectionError}</p>}
-          </td>
-        </tr>
+        </div>
       )}
       {notificationsOpen && (
-        <tr className="border-b border-zinc-900">
-          <td colSpan={8} className="bg-black px-3 py-3">
+        <div className="border-t border-zinc-900 bg-black/50 px-4 py-4">
             <p className="mb-2 text-xs font-medium text-zinc-300">Alert thresholds</p>
             <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-zinc-300">
               <label className="flex items-center gap-1.5">
@@ -586,9 +725,8 @@ export default function ClientRow({
             <button onClick={saveNotifications} disabled={pending} className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               {pending ? "Saving…" : "Save"}
             </button>
-          </td>
-        </tr>
+        </div>
       )}
-    </>
+    </div>
   );
 }

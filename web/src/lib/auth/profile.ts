@@ -10,6 +10,8 @@ export type Profile = {
   role: Role;
   display_name: string | null;
   has_seen_tour: boolean;
+  seen_page_tours: string[];
+  page_tours_disabled: boolean;
   must_change_password: boolean;
 };
 
@@ -26,7 +28,7 @@ export async function getCurrentProfile(
 
   const { data: profile } = await supabase
     .from("user_profiles")
-    .select("id, role, display_name, has_seen_tour, must_change_password")
+    .select("id, role, display_name, has_seen_tour, must_change_password, seen_page_tours, page_tours_disabled")
     .eq("id", userId)
     .single();
 
@@ -38,6 +40,8 @@ export async function getCurrentProfile(
     role: profile.role as Role,
     display_name: profile.display_name as string | null,
     has_seen_tour: Boolean(profile.has_seen_tour),
+    seen_page_tours: (profile.seen_page_tours as string[] | null) ?? [],
+    page_tours_disabled: Boolean(profile.page_tours_disabled),
     must_change_password: Boolean(profile.must_change_password),
   };
 }

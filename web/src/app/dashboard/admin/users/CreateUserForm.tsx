@@ -10,7 +10,7 @@ type Client = { client_id: string; display_name: string };
 type ActionState = { email: string; tempPassword: string } | { error: string } | null;
 
 const inputClass =
-  "rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-accent focus:outline-none";
+  "w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-accent focus:outline-none";
 
 export default function CreateUserForm({ clients }: { clients: Client[] }) {
   const [role, setRole] = useState("user");
@@ -29,8 +29,8 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
   }, [state]);
 
   return (
-    <div data-tour="user-create" className="mb-8 rounded-lg border border-zinc-800 p-4">
-      <p className="mb-3 text-sm font-semibold text-zinc-200">Create a user</p>
+    <div data-tour="user-create" className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-5">
+      <p className="mb-4 text-sm font-semibold text-zinc-100">New user</p>
 
       {state && "tempPassword" in state && (
         <div className="mb-4 rounded border border-status-good/30 bg-status-good/10 p-3 text-sm text-status-good">
@@ -45,7 +45,7 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
       )}
 
       <form action={formAction} className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-400">Email</label>
             <input name="email" type="email" required className={inputClass} />

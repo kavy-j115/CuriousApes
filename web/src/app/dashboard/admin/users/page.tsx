@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile, assertRole, type Role } from "@/lib/auth/profile";
-import CreateUserForm from "./CreateUserForm";
-import UserRow from "./UserRow";
+import UsersView from "./UsersView";
 
 export default async function AdminUsersPage() {
   const supabase = await createClient();
@@ -33,17 +32,6 @@ export default async function AdminUsersPage() {
   }));
 
   return (
-    <div className="max-w-3xl">
-      <h1 className="mb-4 text-xl font-semibold text-zinc-50">Users</h1>
-
-      <CreateUserForm clients={clients ?? []} />
-
-      <div data-tour="user-list" className="flex flex-col gap-3">
-        {users.map((u) => (
-          <UserRow key={u.id} user={u} clients={clients ?? []} currentUserId={profile.id} />
-        ))}
-        {users.length === 0 && <p className="text-sm text-zinc-500">No users yet.</p>}
-      </div>
-    </div>
+    <UsersView users={users} clients={clients ?? []} currentUserId={profile.id} />
   );
 }

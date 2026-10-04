@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Database,
   SlidersHorizontal,
+  Plug,
 } from "lucide-react";
 import type { Role } from "@/lib/auth/profile";
 
@@ -53,6 +54,7 @@ export const MAIN_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { label: "Clients", href: "/dashboard/admin/clients", icon: Building2, roles: ["admin"] },
   { label: "Users", href: "/dashboard/admin/users", icon: UserCog, roles: ["admin"] },
+  { label: "Meta Accounts", href: "/dashboard/admin/meta", icon: Plug, roles: ["admin"] },
   { label: "Permissions", href: "/dashboard/admin/permissions", icon: ShieldCheck, roles: ["admin"] },
   { label: "Data Sources", href: "/dashboard/admin/data-sources", icon: Database, roles: ["admin"] },
   { label: "System Settings", href: "/dashboard/admin/settings", icon: SlidersHorizontal, roles: ["admin"] },

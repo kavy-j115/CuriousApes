@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { markTourSeen } from "../tourActions";
+import { disablePageTours, markPageTourSeen, markTourSeen } from "../tourActions";
 import type { Role } from "@/lib/auth/profile";
 
 type Step = { target?: string; title: string; body: string };
@@ -58,21 +58,24 @@ const PAGE_TOURS: Record<string, Step[]> = {
     { target: "ai-body", title: "AI Daily Report", body: "A plain-language summary of the day's numbers. Use the date picker to read an earlier day." },
   ],
   "/dashboard/segments": [
-    { target: "segment-wizard", title: "Build a customer list", body: "Four steps: upload a Shopify Orders or Customers export, choose the segment, optionally upload a template with the columns you want, then download the list." },
+    { target: "segment-wizard", title: "Build a customer list", body: "Four steps: upload a Shopify Orders or Customers export, build the segment from Include and Exclude groups (RFM tiers, product affinity or custom conditions), optionally upload a template with the columns you want, then download the list. Product Insights can be limited to a segment built the same way." },
   ],
   "/dashboard/collab": [
     { target: "collab-panel", title: "Share a client", body: "Pick one of your clients and a colleague to give them access for 24 hours. You can end it early from the list below." },
   ],
   "/dashboard/admin/clients": [
-    { target: "client-create", title: "Add a client", body: "Brand name, the client's login email, their Shopify, Meta and GA4 IDs, the ideal ROAS, alert limits and WhatsApp numbers. Syncing stays off until you switch it on." },
+    { target: "client-create", title: "Add a client", body: "Brand name, the client's login email, their Shopify store and GA4 ID, the ideal ROAS, alert limits and WhatsApp numbers. Link their Meta ad account on the Meta Accounts page. Syncing stays off until you switch it on, and the first sync loads up to 60 days of Shopify in one bulk export, and 3 days of Meta." },
     { target: "client-table", title: "Manage clients", body: "Each row has its report columns and colours, alerts and WhatsApp numbers, access, connections and the sync switch." },
   ],
   "/dashboard/admin/users": [
     { target: "user-create", title: "Create a user", body: "Make an Admin or User account and choose which clients they can see." },
     { target: "user-list", title: "Existing users", body: "Change a role, adjust client access, or give a colleague 24-hour access." },
   ],
+  "/dashboard/admin/meta": [
+    { target: "meta-accounts", title: "Meta Accounts", body: "Connect Meta once with a Facebook login. Every ad account that profile can reach is listed here. Link each one to its client, or use Auto-match by name. If the login's expiry date gets close, press Reconnect once and every client keeps updating." },
+  ],
   "/dashboard/admin/permissions": [
-    { title: "Permissions", body: "A read-only overview of who has which role and which clients they can see." },
+    { target: "permissions-filter", title: "Permissions", body: "Choose Everyone, Clients, Users or Admins to see only those rows, with the clients each person can see. A 24h tag marks a temporary collab grant." },
   ],
   "/dashboard/admin/data-sources": [
     { title: "Data Sources", body: "Shows which clients have Shopify, Meta and GA4 connected and when each last synced." },
@@ -84,33 +87,56 @@ const PAGE_TOURS: Record<string, Step[]> = {
 
 const CARD_WIDTH = 320;
 const PAD = 6;
-const seenKey = (path: string) => `tour-page:${path}`;
-
 // Walkthrough that dims the page, spotlights a real element for each step and
 // explains it. Two kinds: the app tour (first login, or "Take the tour" in the
 // profile menu) and a tutorial for the page you are on (runs the first time you
 // open that page, and from the sidebar's Tutorial button any time after).
-export default function GuidedTour({ role, autoStart }: { role: Role; autoStart: boolean }) {
+export default function GuidedTour({
+  role,
+  autoStart,
+  seenPages,
+  pageToursDisabled,
+}: {
+  role: Role;
+  autoStart: boolean;
+  seenPages: string[];
+  pageToursDisabled: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(autoStart);
+  // Remembered per user in the database. "Skip tour" on the main tour switches the
+  // automatic page tutorials off for good.
+  const [appTourPending, setAppTourPending] = useState(autoStart);
+  const [seen, setSeen] = useState<Set<string>>(() => new Set(seenPages));
+  const [autoPageToursOff, setAutoPageToursOff] = useState(pageToursDisabled);
   const [mode, setMode] = useState<"app" | "page">("app");
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const steps = useMemo(() => (mode === "page" ? PAGE_TOURS[pathname] ?? stepsFor(role) : stepsFor(role)), [mode, pathname, role]);
   const step = steps[index];
 
-  const finish = useCallback(() => {
-    setOpen(false);
-    setIndex(0);
-    if (mode === "app") void markTourSeen();
-    else {
-      try {
-        localStorage.setItem(seenKey(pathname), "1");
-      } catch {
-        // storage blocked -- the page tutorial just shows again next visit
+  const finish = useCallback(
+    (skipped = false) => {
+      setOpen(false);
+      setIndex(0);
+      if (mode === "app") {
+        void markTourSeen();
+        setAppTourPending(false);
+        if (skipped) {
+          setAutoPageToursOff(true);
+          void disablePageTours();
+        } else {
+          // Finished the main tour: don't chain straight into this page's tutorial.
+          setSeen((prev) => new Set(prev).add(pathname));
+          void markPageTourSeen(pathname);
+        }
+      } else {
+        setSeen((prev) => new Set(prev).add(pathname));
+        void markPageTourSeen(pathname);
       }
-    }
-  }, [mode, pathname]);
+    },
+    [mode, pathname]
+  );
 
   useEffect(() => {
     function start(e: Event) {
@@ -123,24 +149,17 @@ export default function GuidedTour({ role, autoStart }: { role: Role; autoStart:
     return () => window.removeEventListener("start-tour", start);
   }, [pathname]);
 
-  // First visit to a page: show its tutorial once (not while the first-login
-  // app tour is waiting to run).
+  // First visit to a page: show its tutorial once -- never while the main tour is
+  // pending, never after "Skip tour", and never for a page this user has already seen.
   useEffect(() => {
-    if (autoStart || !PAGE_TOURS[pathname]) return;
-    let seen = true;
-    try {
-      seen = !!localStorage.getItem(seenKey(pathname));
-    } catch {
-      seen = true;
-    }
-    if (seen) return;
+    if (appTourPending || autoPageToursOff || !PAGE_TOURS[pathname] || seen.has(pathname)) return;
     const t = setTimeout(() => {
       setMode("page");
       setIndex(0);
       setOpen(true);
     }, 900);
     return () => clearTimeout(t);
-  }, [pathname, autoStart]);
+  }, [pathname, appTourPending, autoPageToursOff, seen]);
 
   useEffect(() => {
     if (!open) return;
@@ -163,7 +182,7 @@ export default function GuidedTour({ role, autoStart }: { role: Role; autoStart:
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") finish();
+      if (e.key === "Escape") finish(true);
       if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, steps.length - 1));
       if (e.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
     }
@@ -213,7 +232,7 @@ export default function GuidedTour({ role, autoStart }: { role: Role; autoStart:
       <p className="mb-4 text-sm leading-relaxed text-zinc-400">{step.body}</p>
       <div className="flex items-center gap-2">
         {!last && (
-          <button onClick={finish} className="text-xs text-zinc-500 hover:text-zinc-300">
+          <button onClick={() => finish(true)} className="text-xs text-zinc-500 hover:text-zinc-300">
             Skip tour
           </button>
         )}
@@ -223,7 +242,7 @@ export default function GuidedTour({ role, autoStart }: { role: Role; autoStart:
               Back
             </button>
           )}
-          <button onClick={last ? finish : () => setIndex(index + 1)} className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white">
+          <button onClick={last ? () => finish(false) : () => setIndex(index + 1)} className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white">
             {last ? "Done" : "Next"}
           </button>
         </div>

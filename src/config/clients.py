@@ -63,7 +63,8 @@ def load_all(conn=None) -> list[dict]:
         cur.execute(
             """
             SELECT client_id, display_name, alert_thresholds, whatsapp_recipients,
-                   shopify_store_domain, meta_ad_account_id, ga4_property_id, sync_enabled
+                   shopify_store_domain, meta_ad_account_id, ga4_property_id, sync_enabled,
+                   paused_at, backfill_from, initial_sync_done, initial_backfill_days
             FROM clients ORDER BY client_id;
             """
         )
@@ -73,6 +74,17 @@ def load_all(conn=None) -> list[dict]:
         # agency token. Names only -- no secret value is read here.
         cur.execute("SELECT name FROM vault.secrets WHERE name LIKE %s;", ("%.meta_ads.access_token",))
         own_meta_token = {name for (name,) in cur.fetchall()}
+        # Ad accounts reachable through an agency Facebook login ("Connect Meta") and
+        # the Vault secret of the (still valid) login that sees each one.
+        cur.execute(
+            """
+            SELECT a.account_id, c.secret_name
+            FROM meta_ad_accounts a JOIN meta_connections c ON c.id = a.connection_id
+            WHERE c.expires_at IS NULL OR c.expires_at > now()
+            ORDER BY c.refreshed_at;
+            """
+        )
+        login_token_for_account = {account_id: secret_name for account_id, secret_name in cur.fetchall()}
         # Agency users' WhatsApp numbers: a user with a client assigned (permanent
         # access) also receives that client's alerts and daily report. Admins are
         # not added here -- they can ask the bot for any client instead.
@@ -87,7 +99,7 @@ def load_all(conn=None) -> list[dict]:
         for cid, phone in cur.fetchall():
             staff_phones.setdefault(cid, []).append(phone)
         for (client_id, display_name, alert_thresholds, whatsapp_recipients,
-             store_domain, ad_account_id, ga4_property_id, sync_enabled) in rows:
+             store_domain, ad_account_id, ga4_property_id, sync_enabled, paused_at, backfill_from, initial_sync_done, initial_backfill_days) in rows:
             config = by_id.setdefault(client_id, {"client_id": client_id, "display_name": display_name})
             config["thresholds"] = alert_thresholds or {}
             recipients: list[str] = []
@@ -99,6 +111,10 @@ def load_all(conn=None) -> list[dict]:
                     recipients.append(phone)
             config["notifications"] = {"whatsapp_recipients": recipients}
             config["sync_enabled"] = bool(sync_enabled)
+            config["paused"] = paused_at is not None
+            config["initial_sync_done"] = bool(initial_sync_done)
+            config["initial_backfill_days"] = initial_backfill_days if initial_backfill_days is not None else 60
+            config["backfill_from"] = backfill_from  # a date when a reconnected client still owes days
 
             if store_domain:
                 shopify = config.setdefault("shopify", {})
@@ -108,7 +124,13 @@ def load_all(conn=None) -> list[dict]:
                 meta = config.setdefault("meta_ads", {})
                 meta["ad_account_id"] = ad_account_id
                 own = f"{client_id}.meta_ads.access_token"
-                meta.setdefault("access_token_secret", own if own in own_meta_token else "agency.meta_ads.access_token")
+                # Order of preference: the client's own token, then the agency Facebook
+                # login that can see its ad account. There is deliberately NO shared
+                # fallback: the old agency token only reached one client's ad account, so
+                # trying it for anyone else would just fail with a misleading error.
+                secret = own if own in own_meta_token else login_token_for_account.get(ad_account_id)
+                if secret:
+                    meta.setdefault("access_token_secret", secret)
             if ga4_property_id:
                 ga4 = config.setdefault("ga4", {})
                 ga4["property_id"] = ga4_property_id

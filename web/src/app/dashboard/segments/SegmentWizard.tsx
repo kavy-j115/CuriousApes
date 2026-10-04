@@ -3,21 +3,15 @@
 import { useMemo, useState } from "react";
 import { Upload, Check, Download } from "lucide-react";
 import Select from "../_components/Select";
-import ConditionBuilder, { type Condition } from "./ConditionBuilder";
-import ProductPicker from "./ProductPicker";
+import GroupBuilder from "./GroupBuilder";
 import { CUSTOMER_FRIENDLY_FIELDS, ORDER_FRIENDLY_FIELDS } from "@/lib/segmentFriendlyFields";
 import {
   parseExport,
   detectShape,
   buildOrderProfiles,
   distinctProducts,
-  rfmRecipe,
   suggestMinSpend,
   DEFAULT_RFM_PARAMS,
-  RFM_TIER_LABELS,
-  affinityRecipe,
-  AFFINITY_MODE_LABELS,
-  customRecipe,
   parseTemplateHeaders,
   guessField,
   buildOutput,
@@ -25,19 +19,15 @@ import {
   OUTPUT_FIELDS,
   type ExportRow,
   type ExportShape,
-  type RfmTier,
   type RfmParams,
-  type AffinityMode,
   type OutputField,
   type SegmentCustomer,
 } from "@/lib/segmentRecipes";
+import { evaluateDefinition, evaluateGroup, newGroup, type SegmentDefinition } from "@/lib/segmentGroups";
 
-type Kind = "rfm" | "affinity" | "custom";
 type Loaded = { name: string; shape: ExportShape; rows: ExportRow[] };
 type Template = { name: string; headers: string[] };
 
-const numberInput =
-  "w-24 rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-100 focus:border-accent focus:outline-none";
 const count = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 const primaryButton = "rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40";
 
@@ -89,13 +79,9 @@ export default function SegmentWizard() {
   const [file, setFile] = useState<Loaded | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
-  const [kind, setKind] = useState<Kind>("rfm");
-  const [tier, setTier] = useState<RfmTier>("vip");
-  const [params, setParams] = useState<RfmParams>(DEFAULT_RFM_PARAMS);
-  const [mode, setMode] = useState<AffinityMode>("bought_any");
-  const [include, setInclude] = useState<string[]>([]);
-  const [exclude, setExclude] = useState<string[]>([]);
-  const [conditions, setConditions] = useState<Condition[]>([]);
+  // The segment is built from include / exclude groups (see lib/segmentGroups.ts).
+  const [definition, setDefinition] = useState<SegmentDefinition>({ include: [newGroup("rfm")], exclude: [] });
+  const [defaultParams, setDefaultParams] = useState<RfmParams>(DEFAULT_RFM_PARAMS);
 
   const [template, setTemplate] = useState<Template | null>(null);
   const [mapping, setMapping] = useState<(OutputField | "")[]>([]);
@@ -104,16 +90,10 @@ export default function SegmentWizard() {
   const profiles = useMemo(() => (file?.shape === "orders" ? buildOrderProfiles(file.rows) : null), [file]);
   const products = useMemo(() => (file?.shape === "orders" ? distinctProducts(file.rows) : []), [file]);
 
-  const segment: SegmentCustomer[] = useMemo(() => {
-    if (!file) return [];
-    if (kind === "custom") {
-      const usable = conditions.filter((c) => c.value.trim() !== "").map((c) => ({ column: c.field, operator: c.operator, value: c.value }));
-      return customRecipe(file.rows, usable, file.shape);
-    }
-    if (!profiles) return [];
-    if (kind === "rfm") return rfmRecipe(profiles, tier, params);
-    return affinityRecipe(profiles, mode, include, exclude);
-  }, [file, kind, conditions, profiles, tier, params, mode, include, exclude]);
+  const context = useMemo(() => (file ? { rows: file.rows, shape: file.shape, profiles } : null), [file, profiles]);
+  const segment: SegmentCustomer[] = useMemo(() => (context ? evaluateDefinition(definition, context) : []), [context, definition]);
+  const includeCounts = useMemo(() => (context ? definition.include.map((g) => evaluateGroup(g, context).length) : []), [context, definition.include]);
+  const excludeCounts = useMemo(() => (context ? definition.exclude.map((g) => evaluateGroup(g, context).length) : []), [context, definition.exclude]);
 
   const output = useMemo(
     () => (template ? buildOutput(segment, template.headers, mapping) : null),
@@ -135,13 +115,13 @@ export default function SegmentWizard() {
       return;
     }
     setFile({ name: f.name, shape, rows });
-    setConditions([]);
-    setInclude([]);
-    setExclude([]);
-    if (shape === "customers") setKind("custom");
-    else {
-      setKind((k) => (k === "custom" ? "rfm" : k));
-      setParams((p) => ({ ...p, minSpend: suggestMinSpend(buildOrderProfiles(rows)) }));
+    if (shape === "customers") {
+      setDefaultParams(DEFAULT_RFM_PARAMS);
+      setDefinition({ include: [newGroup("custom")], exclude: [] });
+    } else {
+      const params = { ...DEFAULT_RFM_PARAMS, minSpend: suggestMinSpend(buildOrderProfiles(rows)) };
+      setDefaultParams(params);
+      setDefinition({ include: [newGroup("rfm", params)], exclude: [] });
     }
     goTo(2);
   }
@@ -170,20 +150,15 @@ export default function SegmentWizard() {
 
   function download() {
     if (!output) return;
-    saveCsv(output.csv, `${kind}_segment.csv`);
+    saveCsv(output.csv, "segment.csv");
   }
 
   // Straight from the segment step: the whole list, no output template needed.
   function downloadList() {
-    saveCsv(buildListCsv(segment), `${kind}_segment_list.csv`);
+    saveCsv(buildListCsv(segment), "segment_list.csv");
   }
 
   const fields = file?.shape === "customers" ? CUSTOMER_FRIENDLY_FIELDS : ORDER_FRIENDLY_FIELDS;
-  const kinds: { key: Kind; label: string; enabled: boolean }[] = [
-    { key: "rfm", label: "RFM tiers", enabled: file?.shape === "orders" },
-    { key: "affinity", label: "Product affinity", enabled: file?.shape === "orders" },
-    { key: "custom", label: "Custom", enabled: true },
-  ];
 
   return (
     <div data-tour="segment-wizard" className="flex max-w-2xl flex-col gap-3">
@@ -208,74 +183,33 @@ export default function SegmentWizard() {
         title="Segment"
         active={step === 2}
         reached={reached >= 3}
-        summary={`${kinds.find((k) => k.key === kind)?.label} · ${count(segment.length, "customer")}`}
+        summary={`${definition.include.length} include · ${definition.exclude.length} exclude · ${count(segment.length, "customer")}`}
         onEdit={() => setStep(2)}
       >
-        <div className="mb-4 flex w-fit gap-1 rounded-full bg-zinc-900 p-1">
-          {kinds.map((k) => (
-            <button
-              key={k.key}
-              disabled={!k.enabled}
-              onClick={() => setKind(k.key)}
-              title={k.enabled ? undefined : "Needs an Orders export"}
-              className={`rounded-full px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
-                kind === k.key ? "bg-zinc-700 text-zinc-50" : "text-zinc-400"
-              }`}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
-
-        {kind === "rfm" && (
+        {file && (
           <div className="flex flex-col gap-3">
-            <Select value={tier} onChange={(v) => setTier(v as RfmTier)} className="w-fit">
-              {(Object.keys(RFM_TIER_LABELS) as RfmTier[]).map((t) => (
-                <option key={t} value={t}>{RFM_TIER_LABELS[t]}</option>
-              ))}
-            </Select>
-            <div className="flex flex-wrap items-end gap-4 text-xs text-zinc-400">
-              {(tier === "vip") && (
-                <label>
-                  Orders at least
-                  <input type="number" min={1} value={params.vipOrders} onChange={(e) => setParams({ ...params, vipOrders: Number(e.target.value) })} className={`mt-1 block ${numberInput}`} />
-                </label>
-              )}
-              {(tier === "vip" || tier === "new" || tier === "at_risk") && (
-                <label>
-                  {tier === "at_risk" ? "Quiet for more than (days)" : "Ordered within (days)"}
-                  <input type="number" min={1} value={params.recentDays} onChange={(e) => setParams({ ...params, recentDays: Number(e.target.value) })} className={`mt-1 block ${numberInput}`} />
-                </label>
-              )}
-              {(tier === "at_risk" || tier === "lapsed") && (
-                <label>
-                  {tier === "at_risk" ? "But not longer than (days)" : "No order for more than (days)"}
-                  <input type="number" min={1} value={params.lapsedDays} onChange={(e) => setParams({ ...params, lapsedDays: Number(e.target.value) })} className={`mt-1 block ${numberInput}`} />
-                </label>
-              )}
-              {tier === "big_spenders" && (
-                <label>
-                  Total spent at least
-                  <input type="number" min={0} value={params.minSpend} onChange={(e) => setParams({ ...params, minSpend: Number(e.target.value) })} className={`mt-1 block ${numberInput}`} />
-                </label>
-              )}
-            </div>
+            <GroupBuilder
+              mode="include"
+              groups={definition.include}
+              onChange={(next) => setDefinition((d) => ({ ...d, include: next }))}
+              shape={file.shape}
+              products={products}
+              fields={fields}
+              defaultParams={defaultParams}
+              counts={includeCounts}
+            />
+            <GroupBuilder
+              mode="exclude"
+              groups={definition.exclude}
+              onChange={(next) => setDefinition((d) => ({ ...d, exclude: next }))}
+              shape={file.shape}
+              products={products}
+              fields={fields}
+              defaultParams={defaultParams}
+              counts={excludeCounts}
+            />
           </div>
         )}
-
-        {kind === "affinity" && (
-          <div className="flex flex-col gap-4">
-            <Select value={mode} onChange={(v) => setMode(v as AffinityMode)} className="w-fit">
-              {(Object.keys(AFFINITY_MODE_LABELS) as AffinityMode[]).map((m) => (
-                <option key={m} value={m}>{AFFINITY_MODE_LABELS[m]}</option>
-              ))}
-            </Select>
-            <ProductPicker label="Products" options={products} selected={include} onChange={setInclude} />
-            {mode === "bought_not" && <ProductPicker label="Excluding" options={products} selected={exclude} onChange={setExclude} />}
-          </div>
-        )}
-
-        {kind === "custom" && <ConditionBuilder fields={fields} conditions={conditions} onChange={setConditions} />}
 
         <div className="mt-5 flex items-center gap-4">
           <button onClick={() => goTo(3)} disabled={segment.length === 0} className={primaryButton}>

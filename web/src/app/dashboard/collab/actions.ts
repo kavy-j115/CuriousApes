@@ -95,7 +95,7 @@ export async function loadCollabData() {
   const supabase = await getSupabase();
   const admin = getAdminClient();
 
-  const { data: visible } = await supabase.from("clients").select("client_id, display_name").order("display_name");
+  const { data: visible } = await supabase.from("clients").select("client_id, display_name").is("paused_at", null).order("display_name");
   let clients = visible ?? [];
   if (caller.role === "user") {
     const { data: permanent } = await admin

@@ -51,6 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ clie
     .from("clients")
     .select("client_id, display_name, report_config, timezone")
     .eq("client_id", clientId)
+    .is("paused_at", null)
     .single();
   if (!client) {
     return NextResponse.json({ error: "Not found or not authorized" }, { status: 404 });

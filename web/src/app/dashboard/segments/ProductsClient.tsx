@@ -3,8 +3,21 @@
 import { useState, useMemo } from "react";
 import Papa from "papaparse";
 import { Upload } from "lucide-react";
-import { parseExport, looksLikeOrdersExport, looksLikeCustomersExport } from "@/lib/segmentRecipes";
-import { aggregateProductStats, type ProductStats } from "@/lib/productAnalytics";
+import GroupBuilder from "./GroupBuilder";
+import {
+  parseExport,
+  looksLikeOrdersExport,
+  looksLikeCustomersExport,
+  buildOrderProfiles,
+  distinctProducts,
+  suggestMinSpend,
+  DEFAULT_RFM_PARAMS,
+  type ExportRow,
+  type RfmParams,
+} from "@/lib/segmentRecipes";
+import { aggregateProductStats } from "@/lib/productAnalytics";
+import { ORDER_FRIENDLY_FIELDS } from "@/lib/segmentFriendlyFields";
+import { evaluateDefinition, evaluateGroup, newGroup, type SegmentDefinition } from "@/lib/segmentGroups";
 
 type SortKey = "unitsSold" | "orderCount" | "revenue";
 
@@ -17,11 +30,15 @@ const SORT_LABELS: Record<SortKey, string> = {
 export default function ProductsClient() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileWarning, setFileWarning] = useState<string | null>(null);
-  const [stats, setStats] = useState<ProductStats[] | null>(null);
+  const [rows, setRows] = useState<ExportRow[] | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("unitsSold");
+  // Optional: limit the product numbers to a segment built from include / exclude groups.
+  const [useSegment, setUseSegment] = useState(false);
+  const [definition, setDefinition] = useState<SegmentDefinition>({ include: [newGroup("rfm")], exclude: [] });
+  const [defaultParams, setDefaultParams] = useState<RfmParams>(DEFAULT_RFM_PARAMS);
 
   async function handleFile(file: File) {
-    setStats(null);
+    setRows(null);
     setFileName(file.name);
     const { rows, headers } = parseExport(await file.text());
     if (!looksLikeOrdersExport(headers)) {
@@ -33,8 +50,29 @@ export default function ProductsClient() {
       return;
     }
     setFileWarning(null);
-    setStats(aggregateProductStats(rows));
+    const params = { ...DEFAULT_RFM_PARAMS, minSpend: suggestMinSpend(buildOrderProfiles(rows)) };
+    setDefaultParams(params);
+    setDefinition({ include: [newGroup("rfm", params)], exclude: [] });
+    setUseSegment(false);
+    setRows(rows);
   }
+
+  const profiles = useMemo(() => (rows ? buildOrderProfiles(rows) : null), [rows]);
+  const products = useMemo(() => (rows ? distinctProducts(rows) : []), [rows]);
+  const context = useMemo(() => (rows ? { rows, shape: "orders" as const, profiles } : null), [rows, profiles]);
+  const segment = useMemo(() => (useSegment && context ? evaluateDefinition(definition, context) : null), [useSegment, context, definition]);
+  const includeCounts = useMemo(() => (context ? definition.include.map((g) => evaluateGroup(g, context).length) : []), [context, definition.include]);
+  const excludeCounts = useMemo(() => (context ? definition.exclude.map((g) => evaluateGroup(g, context).length) : []), [context, definition.exclude]);
+
+  // The orders that belong to the segment's customers (all orders when no segment).
+  const scopedRows = useMemo(() => {
+    if (!rows) return null;
+    if (!segment) return rows;
+    const emails = new Set(segment.map((c) => c.email.trim().toLowerCase()));
+    return rows.filter((r) => emails.has((r["Email"] || "").trim().toLowerCase()));
+  }, [rows, segment]);
+  const stats = useMemo(() => (scopedRows ? aggregateProductStats(scopedRows) : null), [scopedRows]);
+  const orderCount = useMemo(() => (scopedRows ? new Set(scopedRows.map((r) => r["Name"])).size : 0), [scopedRows]);
 
   const sorted = useMemo(() => {
     if (!stats) return [];
@@ -50,7 +88,7 @@ export default function ProductsClient() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "product_performance.csv";
+    a.download = useSegment ? "product_performance_segment.csv" : "product_performance.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -63,6 +101,44 @@ export default function ProductsClient() {
         <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
       </label>
       {fileWarning && <p className="mb-4 text-xs text-status-warning">{fileWarning}</p>}
+
+      {rows && (
+        <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-zinc-100">
+            <input type="checkbox" checked={useSegment} onChange={(e) => setUseSegment(e.target.checked)} className="accent-[var(--color-accent,#6366f1)]" />
+            Limit to a segment
+            <span className="text-xs font-normal text-zinc-500">Build one with include and exclude groups, like on the Segments tab.</span>
+          </label>
+          {useSegment && (
+            <div className="mt-3 flex flex-col gap-3">
+              <GroupBuilder
+                mode="include"
+                groups={definition.include}
+                onChange={(next) => setDefinition((d) => ({ ...d, include: next }))}
+                shape="orders"
+                products={products}
+                fields={ORDER_FRIENDLY_FIELDS}
+                defaultParams={defaultParams}
+                counts={includeCounts}
+              />
+              <GroupBuilder
+                mode="exclude"
+                groups={definition.exclude}
+                onChange={(next) => setDefinition((d) => ({ ...d, exclude: next }))}
+                shape="orders"
+                products={products}
+                fields={ORDER_FRIENDLY_FIELDS}
+                defaultParams={defaultParams}
+                counts={excludeCounts}
+              />
+              <p className="text-sm text-zinc-300">
+                <span className="font-medium tabular-nums text-zinc-50">{(segment?.length ?? 0).toLocaleString()}</span> customers ·{" "}
+                <span className="tabular-nums">{orderCount.toLocaleString()}</span> orders in this segment
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {stats && (
         <>

@@ -79,12 +79,12 @@ def render_and_store_views(
 
 def push_daily_report(
     client_id: str, display_name: str, recipients: list[str], whatsapp_config: dict,
-    supabase_url: str, service_role_key: str, period_label: str = "monthly report",
+    supabase_url: str, service_role_key: str, period_label: str = "monthly report", view: str = "mtd",
 ) -> tuple[int, list[str]]:
-    """Sends the stored month-to-date picture to every recipient. Returns
+    """Sends the stored picture (month-to-date by default; "7d" for the weekly report) to every recipient. Returns
     (sent count, per-recipient error strings) -- one bad number doesn't stop
     the others."""
-    image_url = create_signed_url(supabase_url, service_role_key, f"{client_id}/png/mtd.png", expires_in=3600)
+    image_url = create_signed_url(supabase_url, service_role_key, f"{client_id}/png/{view}.png", expires_in=3600)
     caption = f"{display_name} - {period_label}"
     sent, errors = 0, []
     for phone in recipients:
