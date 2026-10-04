@@ -65,16 +65,44 @@ def send_whatsapp_alert(whatsapp_config: dict, to_phone: str, body_text: str) ->
     )
 
 
-def send_whatsapp_report_image(whatsapp_config: dict, to_phone: str, caption: str, image_url: str) -> None:
-    """Scheduled daily report: an approved template with an IMAGE header.
-    image_url: a time-limited signed Supabase Storage URL (the bucket stays
-    private); Meta fetches it when the message is sent."""
-    _send_template(
-        whatsapp_config["phone_number_id"],
-        whatsapp_config["access_token"],
-        to_phone,
-        whatsapp_config["report_template"],
-        whatsapp_config["template_language"],
-        [caption],
-        header_image_url=image_url,
+def _send_image(phone_number_id: str, access_token: str, to_phone: str, caption: str, image_url: str) -> None:
+    """Plain (non-template) image message. Meta only delivers it inside the 24h window
+    after the recipient last messaged this number; outside it the delivery fails later."""
+    response = requests.post(
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={
+            "messaging_product": "whatsapp",
+            "to": _clean_phone(to_phone),
+            "type": "image",
+            "image": {"link": image_url, "caption": _clean_param(caption)},
+        },
+        timeout=15,
     )
+    if not response.ok:
+        raise requests.HTTPError(f"WhatsApp send failed ({response.status_code}): {response.text}")
+
+
+def send_whatsapp_report_image(whatsapp_config: dict, to_phone: str, caption: str, image_url: str) -> None:
+    """Scheduled report: an approved template with an IMAGE header.
+    image_url: a time-limited signed Supabase Storage URL (the bucket stays
+    private); Meta fetches it when the message is sent.
+
+    Stopgap: while the report template doesn't exist yet in the WhatsApp account (Meta
+    error 132001), the picture is sent as a plain image instead. That reaches only
+    numbers that messaged the bot in the last 24h; once the template is approved this
+    fallback is never used."""
+    try:
+        _send_template(
+            whatsapp_config["phone_number_id"],
+            whatsapp_config["access_token"],
+            to_phone,
+            whatsapp_config["report_template"],
+            whatsapp_config["template_language"],
+            [caption],
+            header_image_url=image_url,
+        )
+    except requests.HTTPError as e:
+        if "132001" not in str(e):
+            raise
+        _send_image(whatsapp_config["phone_number_id"], whatsapp_config["access_token"], to_phone, caption, image_url)
