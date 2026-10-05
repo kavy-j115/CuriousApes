@@ -14,6 +14,7 @@ import {
   Database,
   SlidersHorizontal,
   Plug,
+  ListChecks,
 } from "lucide-react";
 import type { Role } from "@/lib/auth/profile";
 
@@ -48,6 +49,7 @@ export const MAIN_NAV: NavItem[] = [
   { label: "Alerts", href: "/dashboard/alerts", icon: Bell, roles: ["admin", "user", "client"] },
   { label: "AI Report", href: "/dashboard/ai-report", icon: Sparkles, roles: ["admin", "user", "client"] },
   { label: "Segments", href: "/dashboard/segments", icon: Users2, roles: ["admin", "user"] },
+  { label: "Tasks", href: "/dashboard/tasks", icon: ListChecks, roles: ["admin", "user"] },
   { label: "Collab", href: "/dashboard/collab", icon: Share2, roles: ["admin", "user"] },
 ];
 

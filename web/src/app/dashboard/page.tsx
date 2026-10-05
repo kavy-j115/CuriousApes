@@ -1,5 +1,6 @@
 import { DollarSign, Users, ShoppingCart, Receipt, Repeat, UserPlus, UserCheck, TrendingUp } from "lucide-react";
-import { getSupabase, getClients, lastCompleteDay, shiftDate } from "@/lib/dashboardData";
+import { getClients, lastCompleteDay, shiftDate } from "@/lib/dashboardData";
+import { getCachedDashboardData } from "@/lib/cachedData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { computeTotal, ReportRow, fmtNum } from "@/lib/reportMath";
 import { attachDerivedColumns } from "@/lib/reportColumns";
@@ -28,7 +29,6 @@ export default async function DashboardHomePage({
   searchParams: Promise<{ client?: string; from?: string; to?: string }>;
 }) {
   const { client, from, to } = await searchParams;
-  const supabase = await getSupabase();
   const clients = await getClients();
 
   const selectedClient = await resolveSelectedClient(client, clients ?? []);
@@ -53,32 +53,15 @@ export default async function DashboardHomePage({
 
   // One parallel batch: every query only needs selectedClient, so none
   // should wait on another (each is a separate trip to the database).
-  const [
-    { data },
-    { count: totalCustomerCount },
-    { count: repeatCustomerCount },
-    { data: retentionRows },
-    { data: newVsReturningRows },
-  ] = await Promise.all([
-    supabase
-      .from("daily_report_metrics")
-      .select("*")
-      .eq("client_id", selectedClient)
-      .gte("report_date", prevFrom)
-      .lte("report_date", rangeTo)
-      .order("report_date", { ascending: false }),
-    // Counted by the database (head: true returns no rows) -- fetching rows
-    // and taking .length silently capped at Supabase's 1,000-row limit.
-    supabase.from("customer_ltv").select("customer_id", { count: "exact", head: true }).eq("client_id", selectedClient),
-    supabase.from("customer_ltv").select("customer_id", { count: "exact", head: true }).eq("client_id", selectedClient).gte("order_count", 2),
-    supabase.from("cohort_retention").select("retention_rate").eq("client_id", selectedClient).eq("months_since_cohort", 1),
-    supabase
-      .from("daily_new_vs_returning")
-      .select("new_customers, returning_customers")
-      .eq("client_id", selectedClient)
-      .gte("order_date", rangeFrom)
-      .lte("order_date", rangeTo),
-  ]);
+  // Cached for a few minutes (the data only changes with the daily sync); only a client
+  // from the user's own list is ever read this way -- see lib/cachedData.ts.
+  if (!selected) return <p className="text-sm text-zinc-500">No data for this client.</p>;
+  const dash = await getCachedDashboardData(selectedClient, clients, prevFrom, rangeFrom, rangeTo);
+  const data = dash.metrics;
+  const totalCustomerCount = dash.totalCustomers;
+  const repeatCustomerCount = dash.repeatCustomers;
+  const retentionRows = dash.retention as { retention_rate: number | string }[];
+  const newVsReturningRows = dash.newVsReturning as { new_customers: number; returning_customers: number }[];
 
   const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], selected?.report_config?.derivedColumns);
   const currentRows = rows.filter((r) => r.report_date >= rangeFrom);

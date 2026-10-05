@@ -5,6 +5,7 @@ import { login } from "../actions";
 import { ROLE_THEME } from "@/lib/roleTheme";
 import type { Role } from "@/lib/auth/profile";
 import PasswordField from "./PasswordField";
+import SubmitButton from "./SubmitButton";
 
 const VALID_ROLES: Role[] = ["client", "user", "admin"];
 
@@ -71,12 +72,7 @@ export default async function RoleLoginPage({
             <span>Forgot your password? Ask an admin to reset it.</span>
           </div>
 
-          <button
-            type="submit"
-            className={`mt-2 w-full rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${theme.button}`}
-          >
-            Login
-          </button>
+          <SubmitButton className={`mt-2 w-full rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${theme.button}`} />
         </form>
       </div>
     </div>

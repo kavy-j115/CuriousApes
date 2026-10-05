@@ -318,6 +318,7 @@ function UserRow({
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Clients</p>
             <div className="flex flex-wrap items-center gap-2">
               <MultiSelect
+                unit="client"
                 placeholder="No clients"
                 options={clients.map((c) => ({ id: c.client_id, label: c.display_name }))}
                 selected={selected}
@@ -329,7 +330,8 @@ function UserRow({
             </div>
           </div>
 
-          {role === "user" && (
+          {/* Collab is only shown when one is active or one could be granted (a client left to give). */}
+          {role === "user" && (temporary.length > 0 || unassignedClients.length > 0) && (
             <div>
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Collab (24h)</p>
               <div className="flex flex-col gap-1.5">
@@ -349,12 +351,13 @@ function UserRow({
                 })}
                 {unassignedClients.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Select value={collabClient} onChange={setCollabClient}>
-                      <option value="">Choose a client…</option>
-                      {unassignedClients.map((c) => (
-                        <option key={c.client_id} value={c.client_id}>{c.display_name}</option>
-                      ))}
-                    </Select>
+                    <MultiSelect
+                      single
+                      placeholder="Choose a client…"
+                      options={unassignedClients.map((c) => ({ id: c.client_id, label: c.display_name }))}
+                      selected={collabClient ? [collabClient] : []}
+                      onChange={(ids) => setCollabClient(ids[0] ?? "")}
+                    />
                     <button onClick={grant} disabled={!collabClient || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
                       Grant 24h
                     </button>

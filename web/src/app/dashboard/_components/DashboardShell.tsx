@@ -7,6 +7,7 @@ import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import GuidedTour from "./GuidedTour";
 import ToastHost from "./ToastHost";
+import { NavBar, NavMain, NavProgressProvider } from "./NavProgress";
 import type { Profile } from "@/lib/auth/profile";
 
 type Client = { client_id: string; display_name: string };
@@ -41,7 +42,9 @@ export default function DashboardShell({
   }
 
   return (
+    <NavProgressProvider>
     <div className="flex min-h-screen bg-black text-zinc-50">
+      <NavBar />
       <GuidedTour role={profile.role} autoStart={showTour} seenPages={profile.seen_page_tours} pageToursDisabled={profile.page_tours_disabled} />
       <ToastHost />
       <div className="hidden lg:block">
@@ -74,8 +77,9 @@ export default function DashboardShell({
             <Menu size={20} />
           </button>
         </TopBar>
-        <main className="flex-1 overflow-x-auto scrollbar-thin bg-zinc-950 p-4 sm:p-6">{children}</main>
+        <NavMain>{children}</NavMain>
       </div>
     </div>
+    </NavProgressProvider>
   );
 }

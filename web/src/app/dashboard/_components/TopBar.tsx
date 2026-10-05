@@ -1,4 +1,4 @@
-import { Bell } from "lucide-react";
+import NotificationBell from "./NotificationBell";
 import ClientDropdown from "./ClientDropdown";
 import ProfileMenu from "./ProfileMenu";
 import type { Profile } from "@/lib/auth/profile";
@@ -26,9 +26,7 @@ export default function TopBar({
       {children}
       <div className="flex items-center gap-3">
         {showClientDropdown && <ClientDropdown clients={clients} initialSelectedClient={initialSelectedClient} />}
-        <button className="rounded-md p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
-          <Bell size={18} />
-        </button>
+        {profile.role !== "client" && <NotificationBell />}
         <ProfileMenu profile={profile} />
       </div>
     </header>

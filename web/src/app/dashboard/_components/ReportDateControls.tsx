@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNav } from "./NavProgress";
 import { Calendar } from "lucide-react";
 
 function isoDaysAgo(n: number): string {
@@ -28,7 +29,7 @@ const PRESETS: { label: string; from: () => string; to: () => string }[] = [
 // (preserving `client`, `view`, etc.) rather than rebuilding the query
 // string from scratch.
 export default function ReportDateControls({ defaultRange = "month" }: { defaultRange?: "month" | "30d" }) {
-  const router = useRouter();
+  const { navigate: nav } = useNav();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [customOpen, setCustomOpen] = useState(false);
@@ -50,7 +51,7 @@ export default function ReportDateControls({ defaultRange = "month" }: { default
     else params.delete("from");
     if (t) params.set("to", t);
     else params.delete("to");
-    router.push(`${pathname}?${params.toString()}`);
+    nav(`${pathname}?${params.toString()}`);
   }
 
   const inputClass =

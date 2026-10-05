@@ -302,12 +302,17 @@ export default function MetaAccounts({
                     )}
                     <Select value={linked?.id ?? ""} onChange={(v) => map(a.id, v)}>
                       <option value="">Not linked</option>
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                          {c.accountId && c.accountId !== a.id ? " (has another account)" : ""}
-                        </option>
-                      ))}
+                      {/* Only clients still without an ad account (plus the one already linked
+                          to this row). A client that has one appears only when "Change Meta
+                          account" was used on its card, i.e. it is the one in focus. */}
+                      {clients
+                        .filter((c) => !c.accountId || c.id === linked?.id || c.id === focus?.id)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                            {c.accountId && c.accountId !== a.id ? " (has another account)" : ""}
+                          </option>
+                        ))}
                     </Select>
                   </td>
                 </tr>

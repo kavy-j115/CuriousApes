@@ -20,7 +20,6 @@ import {
   setClientSyncEnabled,
   createShopifyInstallLink,
   setClientUserAccess,
-  grantTemporaryAccess,
   revokeAccess,
 } from "../actions";
 import { AVAILABLE_METRICS, ALL_METRIC_KEYS, defaultLabel, type MetricKey, type ReportConfig, type DerivedColumn } from "@/lib/reportColumns";
@@ -117,13 +116,15 @@ export default function ClientRow({
   const [cacPct, setCacPct] = useState(String(client.alert_thresholds?.cac_change_pct ?? ""));
   const [roasPct, setRoasPct] = useState(String(client.alert_thresholds?.roas_change_pct ?? ""));
   const [recipients, setRecipients] = useState((client.whatsapp_recipients ?? []).join(", "));
-  const permanentUserIds = access.filter((a) => !a.expires_at).map((a) => a.user_id);
-  const temporaryAccess = access.filter((a) => a.expires_at);
+  // Only users that can be picked here count: access rows also exist for admins and the
+  // client's own login, which this list does not show, so they are left out of the count
+  // and of the selection (they are neither shown nor changed here).
+  const listedAccess = access.filter((a) => users.some((u) => u.id === a.user_id));
+  const permanentUserIds = listedAccess.filter((a) => !a.expires_at).map((a) => a.user_id);
+  const temporaryAccess = listedAccess.filter((a) => a.expires_at);
   const [accessSelected, setAccessSelected] = useState<string[]>(permanentUserIds);
-  const [collabUserId, setCollabUserId] = useState("");
   const userLabel = (id: string) => users.find((u) => u.id === id)?.label ?? id;
   const accessDirty = accessSelected.length !== permanentUserIds.length || permanentUserIds.some((id) => !accessSelected.includes(id));
-  const collabCandidates = users.filter((u) => u.role === "user" && !access.some((a) => a.user_id === u.id));
   const [storeDomain, setStoreDomain] = useState(client.shopify_store_domain ?? "");
   const [ga4Property, setGa4Property] = useState(client.ga4_property_id ?? "");
   const [installLink, setInstallLink] = useState<string | null>(null);
@@ -281,14 +282,6 @@ export default function ClientRow({
     });
   }
 
-  function grantCollab() {
-    if (!collabUserId) return;
-    startTransition(async () => {
-      await withToast(() => grantTemporaryAccess(collabUserId, client.client_id), "Access granted for 24 hours");
-      setCollabUserId("");
-    });
-  }
-
   function revokeCollab(userId: string) {
     startTransition(async () => {
       await withToast(() => revokeAccess(userId, client.client_id), "Access ended");
@@ -443,7 +436,7 @@ export default function ClientRow({
       <div className="flex flex-wrap items-center gap-1 border-t border-zinc-900 px-3 py-2">
         <Section open={columnsOpen} onClick={() => toggleTab("report")}>Report</Section>
         <Section open={notificationsOpen} onClick={() => toggleTab("alerts")}>Alerts and WhatsApp</Section>
-        <Section open={accessOpen} onClick={() => toggleTab("access")}>Access ({access.length})</Section>
+        <Section open={accessOpen} onClick={() => toggleTab("access")}>Access ({listedAccess.length})</Section>
         <Section open={connectionsOpen} onClick={() => toggleTab("connections")}>Connections</Section>
       </div>
       {columnsOpen && (
@@ -569,6 +562,7 @@ export default function ClientRow({
             <p className="mb-1.5 text-xs font-medium text-zinc-400">Users with access</p>
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <MultiSelect
+                unit="user"
                 placeholder="No users"
                 options={users.map((u) => ({ id: u.id, label: u.label, hint: u.role }))}
                 selected={accessSelected}
@@ -579,35 +573,26 @@ export default function ClientRow({
               </button>
             </div>
 
-            <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h)</p>
-            <div className="flex flex-col gap-1.5">
-              {temporaryAccess.map((t) => {
-                const hours = hoursLeft(t.expires_at!);
-                return (
-                  <div key={t.user_id} className="flex items-center gap-2 text-xs text-zinc-300">
-                    <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
-                      {userLabel(t.user_id)} -- {hours > 0 ? `${hours}h left` : "expired"}
-                    </span>
-                    <button onClick={() => revokeCollab(t.user_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
-                      revoke
-                    </button>
-                  </div>
-                );
-              })}
-              {collabCandidates.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select value={collabUserId} onChange={setCollabUserId}>
-                    <option value="">Give a user 24h access…</option>
-                    {collabCandidates.map((u) => (
-                      <option key={u.id} value={u.id}>{u.label}</option>
-                    ))}
-                  </Select>
-                  <button onClick={grantCollab} disabled={!collabUserId || pending} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-                    Grant
-                  </button>
+            {temporaryAccess.length > 0 && (
+              <>
+                <p className="mb-1.5 text-xs font-medium text-zinc-400">Collab (24h) -- granted from the Users page</p>
+                <div className="flex flex-col gap-1.5">
+                  {temporaryAccess.map((t) => {
+                    const hours = hoursLeft(t.expires_at!);
+                    return (
+                      <div key={t.user_id} className="flex items-center gap-2 text-xs text-zinc-300">
+                        <span className="rounded bg-status-warning/15 px-1.5 py-0.5 text-status-warning">
+                          {userLabel(t.user_id)} -- {hours > 0 ? `${hours}h left` : "expired"}
+                        </span>
+                        <button onClick={() => revokeCollab(t.user_id)} disabled={pending} className="text-zinc-500 hover:text-status-bad">
+                          revoke
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              </>
+            )}
         </div>
       )}
       {connectionsOpen && (

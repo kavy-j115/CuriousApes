@@ -3,7 +3,9 @@ in shopify_daily_sales / shopify_daily_sessions. Upserts per (client, day):
 re-running a window is always safe and simply refreshes it.
 """
 
-from src.connectors.shopify_analytics import fetch_daily_sales, fetch_daily_sessions
+import psycopg2.extras
+
+from src.connectors.shopify_analytics import fetch_daily_sales, fetch_daily_sessions, fetch_landing_page_sessions
 
 
 def sync_shopify_analytics(conn, client_id: str, store_domain: str, access_token: str, since: str, until: str, include_sessions: bool) -> tuple[int, int]:
@@ -45,3 +47,29 @@ def sync_shopify_analytics(conn, client_id: str, store_domain: str, access_token
     conn.commit()
     cur.close()
     return len(sales), len(sessions)
+
+
+def sync_landing_pages(conn, client_id: str, store_domain: str, access_token: str, since: str, until: str) -> int:
+    """Stores sessions per landing page and month (shopify_landing_page_sessions).
+    Upserts per (client, month, page): re-running a window just refreshes it."""
+    rows = fetch_landing_page_sessions(store_domain, access_token, since, until)
+    if not rows:
+        return 0
+    cur = conn.cursor()
+    psycopg2.extras.execute_values(
+        cur,
+        """
+        INSERT INTO shopify_landing_page_sessions
+            (client_id, month, landing_page_path, sessions, sessions_with_cart_additions, fetched_at)
+        VALUES %s
+        ON CONFLICT (client_id, month, landing_page_path) DO UPDATE SET
+            sessions = EXCLUDED.sessions,
+            sessions_with_cart_additions = EXCLUDED.sessions_with_cart_additions,
+            fetched_at = now();
+        """,
+        [(client_id, r["month"], r["landing_page_path"], r["sessions"], r["sessions_with_cart_additions"]) for r in rows],
+        template="(%s, %s, %s, %s, %s, now())",
+    )
+    conn.commit()
+    cur.close()
+    return len(rows)

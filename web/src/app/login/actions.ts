@@ -18,7 +18,7 @@ export async function login(formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error: authError } = await supabase.auth.signInWithPassword({
+  const { data: signedIn, error: authError } = await supabase.auth.signInWithPassword({
     email: formData.get("email") as string,
     password: formData.get("password") as string,
   });
@@ -33,8 +33,8 @@ export async function login(formData: FormData) {
   // doesn't match what they clicked, the session is torn back down
   // immediately rather than left valid -- a mismatch never grants access,
   // it just gets rejected with a role-specific message.
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims?.sub as string | undefined;
+  // The sign-in response already carries the user id -- no second call to find it.
+  const userId = signedIn?.user?.id;
 
   const { data: profile } = userId
     ? await supabase.from("user_profiles").select("role").eq("id", userId).single()

@@ -1,10 +1,36 @@
 import { Download } from "lucide-react";
 import { getSupabase, getClients, lastCompleteDay } from "@/lib/dashboardData";
+import { getCachedReportRows } from "@/lib/cachedData";
 import { resolveSelectedClient } from "@/lib/selectedClient";
 import { ReportRow, computeTotal } from "@/lib/reportMath";
 import { resolveReportColumns, attachDerivedColumns } from "@/lib/reportColumns";
 import ReportDateControls from "../_components/ReportDateControls";
 import MetricsCharts from "@/app/MetricsCharts";
+import { getCachedLandingPages, getCachedMonthlyMetrics, getCachedOrderStats, getCachedProductSales } from "@/lib/cachedData";
+import {
+  type DailyMetricRow,
+  type DailyOrderStats,
+  type DailyProductSales,
+  type LandingRow,
+  landingPages,
+  lastMonths,
+  lastWeeks,
+  monthlyHealth,
+  ordersByWeek,
+  productShare,
+  rtoTable,
+} from "@/lib/reportSections";
+import { Empty, LandingPages, MonthlyHealth, OrdersSummary, ProductShare, RtoView } from "./SectionViews";
+
+const SECTIONS = [
+  { key: "daily", label: "Daily report" },
+  { key: "orders", label: "Orders summary" },
+  { key: "products", label: "Product share" },
+  { key: "landing", label: "Landing pages" },
+  { key: "monthly", label: "Monthly health" },
+  { key: "rto", label: "RTO %" },
+] as const;
+type SectionKey = (typeof SECTIONS)[number]["key"];
 
 const VIEWS = ["table", "chart"] as const;
 type View = (typeof VIEWS)[number];
@@ -12,9 +38,10 @@ type View = (typeof VIEWS)[number];
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; from?: string; to?: string; view?: string }>;
+  searchParams: Promise<{ client?: string; from?: string; to?: string; view?: string; section?: string }>;
 }) {
-  const { client, from, to, view: viewParam } = await searchParams;
+  const { client, from, to, view: viewParam, section: sectionParam } = await searchParams;
+  const section: SectionKey = SECTIONS.some((x) => x.key === sectionParam) ? (sectionParam as SectionKey) : "daily";
   const view: View = VIEWS.includes(viewParam as View) ? (viewParam as View) : "table";
 
   const supabase = await getSupabase();
@@ -48,15 +75,91 @@ export default async function ReportsPage({
       ? `${monthName(rangeTo)} · full month`
       : `${monthName(rangeTo)} · 1–${Number(rangeTo.slice(8, 10))} ${dayMonth(rangeTo).split(" ")[1]}`;
 
-  const { data, error } = await supabase
-    .from("daily_report_metrics")
-    .select("*")
-    .eq("client_id", selectedClient)
-    .gte("report_date", rangeFrom)
-    .lte("report_date", rangeTo)
-    .order("report_date", { ascending: true });
+  const sectionHref = (k: SectionKey) => {
+    const params = new URLSearchParams();
+    if (selectedClient) params.set("client", selectedClient);
+    if (k === "daily" || k === "rto") {
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+    }
+    if (k !== "daily") params.set("section", k);
+    return `/dashboard/reports?${params.toString()}`;
+  };
+  const tabs = (
+    <div data-tour="report-sections" className="mb-5 flex flex-wrap gap-1 border-b border-zinc-900 pb-3">
+      {SECTIONS.map((x) => (
+        <a
+          key={x.key}
+          href={sectionHref(x.key)}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${section === x.key ? "bg-accent/15 text-accent" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"}`}
+        >
+          {x.label}
+        </a>
+      ))}
+    </div>
+  );
 
-  const rows = attachDerivedColumns((data as ReportRow[] | null) ?? [], reportConfig?.derivedColumns);
+  if (section !== "daily") {
+    // Each section is read through the cache, only for a client in the user's own list.
+    let body: React.ReactNode = <Empty>No client selected.</Empty>;
+    if (selected) {
+      try {
+        if (section === "orders") {
+          const weeks = lastWeeks(lastDay, 9);
+          const rows = (await getCachedOrderStats(selectedClient, clients, weeks[weeks.length - 1].start, lastDay)) as unknown as DailyOrderStats[];
+          body = <OrdersSummary weeks={ordersByWeek(rows, weeks)} />;
+        } else if (section === "products") {
+          const weeks = lastWeeks(lastDay, 9);
+          const rows = (await getCachedProductSales(selectedClient, clients, weeks[weeks.length - 1].start, lastDay)) as unknown as DailyProductSales[];
+          body = <ProductShare table={productShare(rows, weeks)} />;
+        } else if (section === "landing") {
+          const months = lastMonths(lastDay, 4);
+          const rows = (await getCachedLandingPages(selectedClient, clients, months[months.length - 1].month)) as unknown as LandingRow[];
+          body = <LandingPages table={landingPages(rows, months)} hasData={rows.length > 0} />;
+        } else if (section === "monthly") {
+          const months = lastMonths(lastDay, 12);
+          const rows = (await getCachedMonthlyMetrics(selectedClient, clients, months[months.length - 1].month, lastDay)) as unknown as DailyMetricRow[];
+          const m = monthlyHealth(rows, months);
+          body = <MonthlyHealth rows={m.rows} total={m.total} />;
+        } else {
+          const rows = (await getCachedOrderStats(selectedClient, clients, rangeFrom, rangeTo)) as unknown as DailyOrderStats[];
+          const t = rtoTable(rows);
+          body = <RtoView days={t.days} total={t.total} name={selected.display_name ?? selectedClient} />;
+        }
+      } catch (e) {
+        body = <p className="rounded bg-status-bad/10 p-4 text-status-bad">Failed to load this report: {e instanceof Error ? e.message : "unknown error"}</p>;
+      }
+    }
+    return (
+      <div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold text-zinc-50">Reports</h1>
+            {section === "rto" && (
+              <span className="rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-300">{periodLabel}</span>
+            )}
+          </div>
+          {section === "rto" && <ReportDateControls />}
+        </div>
+        {tabs}
+        {body}
+      </div>
+    );
+  }
+
+  // Cached for a few minutes (the data only changes with the daily sync). Only a client
+  // from the user's own list is ever read this way -- see lib/cachedData.ts.
+  let data: ReportRow[] = [];
+  let error: { message: string } | null = null;
+  if (selected) {
+    try {
+      data = (await getCachedReportRows(selectedClient, clients, rangeFrom, rangeTo)) as unknown as ReportRow[];
+    } catch (e) {
+      error = { message: e instanceof Error ? e.message : "Couldn't load the report." };
+    }
+  }
+
+  const rows = attachDerivedColumns(data, reportConfig?.derivedColumns);
   // Total row every day (month to date, or any range of more than one day).
   // computeTotal takes the latest day as rows[0] for MTD/LMTD, so it gets the
   // rows newest-first even though the table shows oldest-first.
@@ -111,6 +214,8 @@ export default async function ReportsPage({
           <ReportDateControls />
         </div>
       </div>
+
+      {tabs}
 
       {error && <p className="rounded bg-status-bad/10 p-4 text-status-bad">Failed to load report: {error.message}</p>}
       {!error && rows.length === 0 && <p className="text-sm text-zinc-500">No data for this selection.</p>}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNav } from "./NavProgress";
 import { ChevronDown, Search, Check } from "lucide-react";
 import { SELECTED_CLIENT_COOKIE } from "@/lib/selectedClientCookie";
 
@@ -32,7 +33,7 @@ export default function ClientDropdown({
   clients: Client[];
   initialSelectedClient: string;
 }) {
-  const router = useRouter();
+  const { navigate } = useNav();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = searchParams.get("client");
@@ -83,7 +84,7 @@ export default function ClientDropdown({
     writeCookieClient(clientId);
     const params = new URLSearchParams(searchParams.toString());
     params.set("client", clientId);
-    router.push(`${pathname}?${params.toString()}`);
+    navigate(`${pathname}?${params.toString()}`);
     setOpen(false);
     setQuery("");
   }

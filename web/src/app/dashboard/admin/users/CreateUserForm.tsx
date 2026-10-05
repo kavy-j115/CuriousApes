@@ -71,6 +71,7 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
           <div>
             <p className="mb-1.5 text-xs font-medium text-zinc-400">Assigned clients</p>
             <MultiSelect
+              unit="client"
               placeholder={clients.length === 0 ? "No clients yet" : "Select clients"}
               options={clients.map((c) => ({ id: c.client_id, label: c.display_name }))}
               selected={assigned}

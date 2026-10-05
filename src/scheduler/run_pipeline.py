@@ -32,7 +32,8 @@ from src.config.report_config import load_report_config
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
 from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
-from src.ingestion.shopify_analytics import sync_shopify_analytics
+from src.ingestion.shopify_analytics import sync_landing_pages, sync_shopify_analytics
+from src.connectors.shopify_analytics import ShopifyAnalyticsError
 from src.transformations.shopify_orders import transform_orders
 from src.reports.business_health_report import generate_report
 from src.reports.storage import ensure_bucket_exists, upload_report
@@ -132,6 +133,21 @@ def run_for_client(
             results.append(StepResult("Shopify analytics", "ok", f"{sales_days} sales days, {session_days} session days"))
         except Exception as e:
             results.append(StepResult("Shopify analytics", "error", str(e)))
+
+        # Landing page report (Reports > Landing pages): the last two full months plus
+        # this month so far. A query Shopify doesn't accept is reported as skipped, not
+        # failed, so it never turns the daily run red on its own.
+        try:
+            last_day = _last_complete_day(conn, client_id)
+            first = last_day.replace(day=1)
+            for _ in range(2):
+                first = (first - timedelta(days=1)).replace(day=1)
+            pages = sync_landing_pages(conn, client_id, store_domain, shopify_token, first.isoformat(), last_day.isoformat())
+            results.append(StepResult("Landing pages", "ok", f"{pages} page-month rows"))
+        except ShopifyAnalyticsError as e:
+            results.append(StepResult("Landing pages", "skipped", str(e)[:200]))
+        except Exception as e:
+            results.append(StepResult("Landing pages", "error", str(e)))
     else:
         results.append(StepResult("Shopify sync", "skipped", "not configured for this client"))
 

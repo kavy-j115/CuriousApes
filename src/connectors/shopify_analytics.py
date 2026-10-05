@@ -115,3 +115,32 @@ def fetch_daily_sessions(store_domain: str, access_token: str, since: str, until
         }
         for r in rows
     ]
+
+
+def fetch_landing_page_sessions(store_domain: str, access_token: str, since: str, until: str, limit: int = 300) -> list[dict]:
+    """Sessions and add-to-cart sessions per landing page and month (the Landing Page
+    Path report). One dict per (month, landing page): month (YYYY-MM-01),
+    landing_page_path, sessions, sessions_with_cart_additions. Not yet run against a
+    live store; a rejected query raises ShopifyAnalyticsError and nothing is guessed."""
+    q = (
+        "FROM sessions SHOW sessions, sessions_with_cart_additions "
+        f"TIMESERIES month GROUP BY landing_page_path SINCE {since} UNTIL {until} "
+        f"ORDER BY sessions DESC LIMIT {int(limit)}"
+    )
+    rows = _run(store_domain, access_token, q)
+    if rows:
+        present = set(rows[0].keys())
+        missing = [c for c in ("month", "landing_page_path", "sessions", "sessions_with_cart_additions") if c not in present]
+        if missing:
+            raise ShopifyAnalyticsError(
+                f"The landing page report came back without column(s) {missing}. Columns returned: {sorted(present)}."
+            )
+    return [
+        {
+            "month": str(r["month"])[:7] + "-01",
+            "landing_page_path": str(r["landing_page_path"] or "(unknown)"),
+            "sessions": int(round(_number(r["sessions"]))),
+            "sessions_with_cart_additions": int(round(_number(r["sessions_with_cart_additions"]))),
+        }
+        for r in rows
+    ]

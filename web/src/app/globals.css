@@ -69,3 +69,8 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: #52525b;
 }
+
+@keyframes navbar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

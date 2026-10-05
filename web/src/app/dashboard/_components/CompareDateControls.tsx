@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNav } from "./NavProgress";
 import { X } from "lucide-react";
 
 type Range = { aFrom: string; aTo: string; bFrom: string; bTo: string };
@@ -52,7 +53,7 @@ const PRESETS: { label: string; range: () => Range }[] = [
 // collapsing to a small bar once the user has started, so it stops
 // competing with the results for attention.
 export default function CompareDateControls() {
-  const router = useRouter();
+  const { navigate: nav } = useNav();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -69,7 +70,7 @@ export default function CompareDateControls() {
       if (value) params.set(key, value);
       else params.delete(key);
     });
-    router.push(`${pathname}?${params.toString()}`);
+    nav(`${pathname}?${params.toString()}`);
   }
 
   function applyPreset(range: Range) {
@@ -93,7 +94,7 @@ export default function CompareDateControls() {
   function reset() {
     const params = new URLSearchParams(searchParams.toString());
     ["aFrom", "aTo", "bFrom", "bTo"].forEach((k) => params.delete(k));
-    router.push(`${pathname}?${params.toString()}`);
+    nav(`${pathname}?${params.toString()}`);
   }
 
   if (!hasStarted) {

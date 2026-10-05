@@ -1,11 +1,16 @@
 name: D2C Analytics Pipeline
 
 on:
-  schedule:
-    # 03:30 UTC = 09:00 IST -- matches the "run every morning" example from
-    # the original project brief.
-    - cron: "30 3 * * *"
-  workflow_dispatch: {}  # lets us trigger a run manually from the Actions tab, for testing
+  # Started every morning at 09:00 IST by an external timer (cron-job.org) that calls
+  # this workflow's "dispatches" API -- GitHub's own `schedule:` trigger was dropped
+  # because it routinely starts hours late (and a late run on top of the timer's run
+  # would send every report twice). Also startable by hand from the Actions tab.
+  workflow_dispatch: {}
+
+# Never two runs at once (a second request waits instead of running alongside).
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
 
 jobs:
   run-pipeline:
