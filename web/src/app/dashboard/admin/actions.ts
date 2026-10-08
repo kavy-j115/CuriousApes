@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createPlainClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { deleteClientEverything } from "@/lib/clientDeletion";
 import { getCurrentProfile } from "@/lib/auth/profile";
 import type { ReportConfig } from "@/lib/reportColumns";
 import { buildInstallUrl, signState } from "@/lib/shopifyOAuth";
@@ -381,7 +382,11 @@ export async function startClientSync(
   const day = 86400000;
   const from = Date.parse(`${fromDate}T00:00:00Z`);
   const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
-  if (!(from >= today - 60 * day)) return { error: "Shopify only allows the last 60 days." };
+  const { data: access } = await supabase.from("clients").select("all_orders_access").eq("client_id", clientId).maybeSingle();
+  const maxDays = access?.all_orders_access ? 1825 : 60; // read_all_orders lifts Shopify's 60-day limit
+  if (!(from >= today - maxDays * day)) {
+    return { error: maxDays === 60 ? "Shopify only allows the last 60 days for this store." : "That is further back than the 5 years allowed." };
+  }
   if (!(from < today)) return { error: "The start date must be before today (today is fetched tomorrow, once it is whole)." };
 
   const { data: client } = await supabase.from("clients").select("paused_at").eq("client_id", clientId).maybeSingle();
@@ -435,40 +440,7 @@ export async function getClientSyncLog(clientId: string): Promise<{ running: boo
 // typed the client ID in the UI.
 export async function deleteClientRecord(clientId: string) {
   await requireAdmin();
-  const admin = getAdminClient();
-
-  // Client logins that only ever had access to this client.
-  const { data: access } = await admin.from("client_access").select("user_id").eq("client_id", clientId);
-  const candidateIds = (access ?? []).map((a) => a.user_id as string);
-  const { data: clientLogins } = candidateIds.length
-    ? await admin.from("user_profiles").select("id").eq("role", "client").in("id", candidateIds)
-    : { data: [] as { id: string }[] };
-
-  const { error } = await admin.rpc("delete_client_completely", { p_client_id: clientId });
-  if (error) throw new Error(error.message);
-
-  // Best-effort cleanup after the database part succeeded.
-  for (const login of clientLogins ?? []) {
-    const { count } = await admin.from("client_access").select("user_id", { count: "exact", head: true }).eq("user_id", login.id);
-    if (!count) await admin.auth.admin.deleteUser(login.id as string);
-  }
-  try {
-    const storage = admin.storage.from("reports");
-    const paths: string[] = [];
-    const walk = async (prefix: string) => {
-      const { data } = await storage.list(prefix, { limit: 1000 });
-      for (const item of data ?? []) {
-        const full = `${prefix}/${item.name}`;
-        if (item.id) paths.push(full);
-        else await walk(full);
-      }
-    };
-    await walk(clientId);
-    if (paths.length) await storage.remove(paths);
-  } catch {
-    // report files left behind are harmless; the database part is what matters
-  }
-
+  await deleteClientEverything(clientId);
   revalidatePath("/dashboard", "layout");
 }
 

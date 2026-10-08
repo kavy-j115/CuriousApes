@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Files that may POST to Meta/Shopify, and why:
 ALLOWED_POST = {
     "src/connectors/shopify.py": "GraphQL QUERIES (reads) + the bulk order export (bulkOperationRunQuery, the only mutation readonly.py lets through)",
+    "src/connectors/shopify_token.py": "OAuth refresh-token exchange for a public app (keeps our read access alive)",
     "src/notifications/whatsapp.py": "sending WhatsApp messages (the delivery channel)",
     "web/src/lib/whatsappBot.ts": "replying to WhatsApp messages (the delivery channel)",
     "web/src/app/api/shopify/callback/route.ts": "OAuth code -> read-access token exchange for an install",

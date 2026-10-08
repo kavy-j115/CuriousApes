@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { SHOP_DOMAIN_PATTERN, verifyShopifyHmac, verifyState } from "@/lib/shopifyOAuth";
-import { getShopifyClientSecret, shopifyEnv, storeShopifyToken } from "@/lib/shopifyConfig";
+import { expiringTokensEnabled, getShopifyClientSecret, shopifyEnv, storeShopifyToken, type TokenBundle } from "@/lib/shopifyConfig";
 
 // Shopify redirects the store owner here after they approve the install.
 // Deliberately reachable without a login (proxy.ts exempts it) -- the person
@@ -51,24 +51,42 @@ export async function GET(request: NextRequest) {
     return page("Wrong store", "This link was issued for a different store.", 400);
   }
 
-  let token: string | undefined;
+  let token: string | TokenBundle | undefined;
+  let grantedScopes = "";
   try {
     const { clientId } = shopifyEnv();
     const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ client_id: clientId, client_secret: secret, code, expiring: 0 }),
+      body: JSON.stringify({ client_id: clientId, client_secret: secret, code, expiring: expiringTokensEnabled() ? 1 : 0 }),
     });
     if (!response.ok) {
       return page("Install failed", "Shopify rejected the request. Ask the agency for a new install link.", 502);
     }
-    const body = (await response.json()) as { access_token?: string; expires_in?: number; refresh_token?: string };
-    // An expiring token would silently stop working an hour later and the
-    // pipeline has no refresh logic -- refuse it rather than store it.
+    const body = (await response.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      refresh_token_expires_in?: number;
+      scope?: string;
+    };
+    grantedScopes = body.scope ?? "";
     if (body.expires_in || body.refresh_token) {
-      return page("Setup problem", "Shopify issued a short-lived token, which the agency's system doesn't support yet.", 502);
+      // A short-lived token is only acceptable once the app is public and the pipeline
+      // refreshes tokens (SHOPIFY_EXPIRING_TOKENS=1); otherwise it would silently stop
+      // working an hour later, so refuse it rather than store it.
+      if (!expiringTokensEnabled() || !body.access_token || !body.refresh_token) {
+        return page("Setup problem", "Shopify issued a short-lived token, which the agency's system isn't set up for yet.", 502);
+      }
+      token = {
+        accessToken: body.access_token,
+        refreshToken: body.refresh_token,
+        expiresIn: Number(body.expires_in ?? 3600),
+        refreshExpiresIn: Number(body.refresh_token_expires_in ?? 7776000),
+      };
+    } else {
+      token = body.access_token;
     }
-    token = body.access_token;
   } catch {
     return page("Install failed", "Couldn't reach Shopify. Please try the link again.", 502);
   }
@@ -77,6 +95,11 @@ export async function GET(request: NextRequest) {
 
   try {
     await storeShopifyToken(verified.clientId, token);
+    // Shopify lists the scopes it granted; read_all_orders lifts the 60-day limit on order history.
+    await admin
+      .from("clients")
+      .update({ all_orders_access: grantedScopes.split(",").map((x) => x.trim()).includes("read_all_orders") })
+      .eq("client_id", verified.clientId);
   } catch {
     return page("Install failed", "The connection couldn't be saved. Please contact the agency.", 500);
   }

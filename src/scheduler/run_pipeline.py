@@ -32,6 +32,7 @@ from src.config.report_config import load_report_config
 from src.ingestion.shopify_orders import sync_orders as sync_shopify_orders
 from src.ingestion.meta_insights import sync_insights as sync_meta_insights
 from src.ingestion.ga4_sessions import sync_sessions as sync_ga4_sessions
+from src.connectors.shopify_token import ShopifyTokenError, get_shopify_access_token
 from src.ingestion.shopify_analytics import sync_landing_pages, sync_shopify_analytics
 from src.connectors.shopify_analytics import ShopifyAnalyticsError
 from src.transformations.shopify_orders import transform_orders
@@ -90,6 +91,10 @@ def _last_complete_day(conn, client_id: str) -> date:
     return (row[0] if row else date.today()) - timedelta(days=1)
 
 
+# How far back a store with the read_all_orders scope may be backfilled (about five years).
+MAX_HISTORY_DAYS = 1825
+
+
 def run_for_client(
     conn, config: dict, since: str, whatsapp_config: dict | None, meta_since: str | None = None, full_transform: bool = False,
     bulk: bool = False,
@@ -98,7 +103,14 @@ def run_for_client(
     results: list[StepResult] = []
 
     store_domain = get_value(config, "shopify", "store_domain")
-    shopify_token = resolve_secret(conn, config, "shopify", "access_token_secret")
+    # A custom app's token is plain and never expires; a public app's is an expiring pair that
+    # is refreshed here when needed (see src/connectors/shopify_token.py).
+    shopify_token = None
+    if store_domain:
+        try:
+            shopify_token = get_shopify_access_token(conn, config, client_id, store_domain)
+        except ShopifyTokenError as e:
+            results.append(StepResult("Shopify token", "error", str(e)))
     if store_domain and shopify_token:
         try:
             # Taken before the sync so the transform below can pick up exactly
@@ -148,7 +160,7 @@ def run_for_client(
             results.append(StepResult("Landing pages", "skipped", str(e)[:200]))
         except Exception as e:
             results.append(StepResult("Landing pages", "error", str(e)))
-    else:
+    elif not any(r.step == "Shopify token" for r in results):
         results.append(StepResult("Shopify sync", "skipped", "not configured for this client"))
 
     ad_account_id = get_value(config, "meta_ads", "ad_account_id")
@@ -349,19 +361,24 @@ def run_for_client(
         elif not recipients:
             results.append(StepResult("WhatsApp daily report", "skipped", "no whatsapp_recipients for this client"))
         else:
+            # Captions: daily "Brand - 5 Oct 2026". On the 1st of a month the picture is the
+            # whole finished month, sent once as "Brand - Monthly report" instead of a daily.
+            is_monthly = views["mtd"].startswith("Monthly report")
+            step = "WhatsApp monthly report" if is_monthly else "WhatsApp daily report"
             sent, send_errors = push_daily_report(
-                client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key, views["mtd"]
+                client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key,
+                "Monthly report" if is_monthly else views.get("yesterday", views["mtd"]), "mtd",
             )
             for err in send_errors:
-                results.append(StepResult("WhatsApp daily report", "error", err))
+                results.append(StepResult(step, "error", err))
             if sent:
-                results.append(StepResult("WhatsApp daily report", "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
+                results.append(StepResult(step, "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
         # Weekly report: on Mondays the client also gets the last 7 completed days
         # (the previous Monday-Sunday) as a picture.
         if date.today().weekday() == 0 and "7d" in views and whatsapp_config and recipients:
             sent, send_errors = push_daily_report(
                 client_id, display_name, recipients, whatsapp_config, supabase_url, service_role_key,
-                "weekly report (" + views['7d'].split('(')[-1], "7d",
+                views["7d"], "7d",  # caption: "Brand - 28 Sep to 4 Oct 2026"
             )
             for err in send_errors:
                 results.append(StepResult("WhatsApp weekly report", "error", err))
@@ -451,6 +468,11 @@ def main():
     any_errors = False
     jobs = []
     for config in clients:
+        # A client that only exists as a config file (no row in the database) cannot be
+        # stored or alerted on -- skip it instead of failing every run.
+        if "paused" not in config:
+            print_summary(config["client_id"], [StepResult("Sync", "skipped", "only in a config file, not in the database")])
+            continue
         if config.get("paused"):
             print_summary(config["client_id"], [StepResult("Sync", "skipped", "client is paused (disconnected)")])
             continue
@@ -467,11 +489,14 @@ def main():
         # file, not hundreds of pages), never further back than 60 days -- Shopify's
         # order window -- whenever it joined or however long it was paused.
         # A brand-new client gets only 3 days of Meta.
-        floor = (date.today() - timedelta(days=60)).isoformat()
+        # Shopify lets an app read only the last 60 days of orders, unless the store granted the
+        # read_all_orders scope (clients.all_orders_access): then up to MAX_HISTORY_DAYS.
+        max_history = MAX_HISTORY_DAYS if config.get("all_orders_access") else 60
+        floor = (date.today() - timedelta(days=max_history)).isoformat()
         new_client = not config.get("initial_sync_done", True)
         if new_client:
             # How far back is chosen per client when it is added (0 = this month so far).
-            cap_days = config.get("initial_backfill_days", 60)
+            cap_days = min(config.get("initial_backfill_days", 60), max_history)
             if owed:  # the start date picked in the "Sync now" pop-up
                 client_since = max(owed.isoformat(), floor)
             elif cap_days == 0:

@@ -36,13 +36,13 @@ def _fmt(value, number_format: str) -> str:
         d = value if isinstance(value, (date, datetime)) else datetime.fromisoformat(str(value))
         return d.strftime("%d-%m-%Y")
     v = float(value)
+    # Whole numbers throughout the picture. PROAS (a small ratio such as 2.4) keeps one
+    # decimal, since rounding it to a whole number would change what it says.
     if number_format == "0.0%":
-        return f"{v * 100:.1f}%"
+        return f"{v * 100:.0f}%"
     if number_format == "0.0":
         return f"{v:.1f}"
-    if number_format == "#,##0":
-        return f"{v:,.0f}"
-    return f"{v:,.2f}"
+    return f"{v:,.0f}"
 
 
 def _wrap(draw, text: str, font, max_w: int) -> list[str]:

@@ -43,6 +43,7 @@ export type ClientRowData = {
   pause_reason: string | null;
   initial_sync_done: boolean;
   backfill_from?: string | null;
+  all_orders_access?: boolean;
   meta_account_name?: string | null;
 };
 
@@ -349,7 +350,7 @@ export default function ClientRow({
   return (
     <div className={`overflow-hidden rounded-xl border bg-zinc-950 ${client.paused_at ? "border-zinc-900" : "border-zinc-800"}`}>
       {syncOpen && (
-        <SyncNowModal clientId={client.client_id} name={client.display_name} defaultFrom={syncDefault} onClose={() => setSyncOpen(false)} />
+        <SyncNowModal clientId={client.client_id} name={client.display_name} maxDays={client.all_orders_access ? 1825 : 60} defaultFrom={syncDefault} onClose={() => setSyncOpen(false)} />
       )}
       <div className={`flex flex-wrap items-start justify-between gap-4 p-4 ${client.paused_at ? "opacity-75" : ""}`}>
         <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -365,7 +366,7 @@ export default function ClientRow({
               {client.paused_at && (
                 <Chip tone="warn">
                   Disconnected {new Date(client.paused_at).toLocaleDateString()}
-                  {client.pause_reason === "meta_access_lost" ? " · Meta access lost" : ""}
+                  {client.pause_reason === "meta_access_lost" ? " · Meta access lost" : client.pause_reason === "shopify_uninstalled" ? " · Shopify app uninstalled" : ""}
                 </Chip>
               )}
               <span className="inline-flex items-center gap-1.5">
@@ -378,7 +379,7 @@ export default function ClientRow({
                 className="inline-flex items-center gap-1.5 hover:text-accent"
               >
                 <Dot on={!!client.meta_ad_account_id} />
-                {client.meta_ad_account_id ? `Meta: ${client.meta_account_name ?? client.meta_ad_account_id}` : "Meta not linked"}
+                {client.meta_ad_account_id ? (client.meta_account_name ?? "Ad account linked") : "Meta not linked"}
               </Link>
               {needsFirstSync && (
                 <button onClick={() => { setSyncDefault(client.backfill_from ?? null); setSyncOpen(true); }} className="font-medium text-accent hover:underline">
@@ -650,7 +651,6 @@ export default function ClientRow({
                     {client.meta_ad_account_id ? (
                       <>
                         {client.meta_account_name ?? "Linked"}
-                        <span className="ml-2 font-mono text-xs text-zinc-500">{client.meta_ad_account_id}</span>
                       </>
                     ) : (
                       "Not linked"

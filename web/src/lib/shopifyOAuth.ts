@@ -51,6 +51,20 @@ export function verifyShopifyHmac(params: URLSearchParams, secret: string): bool
   return safeEqualHex(provided, sign(secret, message));
 }
 
+// Shopify signs every webhook: base64 of HMAC-SHA256 over the RAW request body, keyed by the
+// app's client secret, sent in the X-Shopify-Hmac-Sha256 header.
+export function verifyWebhookHmac(rawBody: string, header: string | null, secret: string): boolean {
+  if (!header) return false;
+  const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest();
+  let provided: Buffer;
+  try {
+    provided = Buffer.from(header, "base64");
+  } catch {
+    return false;
+  }
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
 export function buildInstallUrl(args: {
   shop: string;
   clientId: string;

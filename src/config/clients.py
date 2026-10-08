@@ -64,7 +64,7 @@ def load_all(conn=None) -> list[dict]:
             """
             SELECT client_id, display_name, alert_thresholds, whatsapp_recipients,
                    shopify_store_domain, meta_ad_account_id, ga4_property_id, sync_enabled,
-                   paused_at, backfill_from, initial_sync_done, initial_backfill_days
+                   paused_at, backfill_from, initial_sync_done, initial_backfill_days, all_orders_access
             FROM clients ORDER BY client_id;
             """
         )
@@ -99,7 +99,7 @@ def load_all(conn=None) -> list[dict]:
         for cid, phone in cur.fetchall():
             staff_phones.setdefault(cid, []).append(phone)
         for (client_id, display_name, alert_thresholds, whatsapp_recipients,
-             store_domain, ad_account_id, ga4_property_id, sync_enabled, paused_at, backfill_from, initial_sync_done, initial_backfill_days) in rows:
+             store_domain, ad_account_id, ga4_property_id, sync_enabled, paused_at, backfill_from, initial_sync_done, initial_backfill_days, all_orders_access) in rows:
             config = by_id.setdefault(client_id, {"client_id": client_id, "display_name": display_name})
             config["thresholds"] = alert_thresholds or {}
             recipients: list[str] = []
@@ -114,6 +114,7 @@ def load_all(conn=None) -> list[dict]:
             config["paused"] = paused_at is not None
             config["initial_sync_done"] = bool(initial_sync_done)
             config["initial_backfill_days"] = initial_backfill_days if initial_backfill_days is not None else 60
+            config["all_orders_access"] = bool(all_orders_access)
             config["backfill_from"] = backfill_from  # a date when a reconnected client still owes days
 
             if store_domain:

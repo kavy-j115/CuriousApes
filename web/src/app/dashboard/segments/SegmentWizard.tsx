@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import { Upload, Check, Download } from "lucide-react";
 import Select from "../_components/Select";
 import GroupBuilder from "./GroupBuilder";
-import { CUSTOMER_FRIENDLY_FIELDS, ORDER_FRIENDLY_FIELDS } from "@/lib/segmentFriendlyFields";
+import { CUSTOMER_FRIENDLY_FIELDS, orderFieldsPresentIn } from "@/lib/segmentFriendlyFields";
 import {
   parseExport,
+  readCsvFile,
   detectShape,
   buildOrderProfiles,
   distinctProducts,
@@ -108,7 +109,7 @@ export default function SegmentWizard() {
   async function handleFile(f: File | undefined) {
     if (!f) return;
     setFileError(null);
-    const { rows, headers } = parseExport(await f.text());
+    const { rows, headers } = parseExport(await readCsvFile(f));
     const shape = detectShape(headers);
     if (!shape) {
       setFileError("This doesn't look like a Shopify Orders or Customers export.");
@@ -129,7 +130,7 @@ export default function SegmentWizard() {
   async function handleTemplate(f: File | undefined) {
     if (!f) return;
     setTemplateError(null);
-    const headers = parseTemplateHeaders(await f.text());
+    const headers = parseTemplateHeaders(await readCsvFile(f));
     if (headers.length === 0) {
       setTemplateError("Couldn't find a header row in this file.");
       return;
@@ -158,7 +159,7 @@ export default function SegmentWizard() {
     saveCsv(buildListCsv(segment), "segment_list.csv");
   }
 
-  const fields = file?.shape === "customers" ? CUSTOMER_FRIENDLY_FIELDS : ORDER_FRIENDLY_FIELDS;
+  const fields = useMemo(() => (file?.shape === "customers" ? CUSTOMER_FRIENDLY_FIELDS : file ? orderFieldsPresentIn(file.rows) : []), [file]);
 
   return (
     <div data-tour="segment-wizard" className="flex max-w-2xl flex-col gap-3">

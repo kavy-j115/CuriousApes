@@ -12,7 +12,7 @@ export default async function AdminClientsPage() {
   const [{ data: clients }, { data: users }, { data: access }, { data: metaAccounts }] = await Promise.all([
     supabase
       .from("clients")
-      .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients, shopify_store_domain, meta_ad_account_id, ga4_property_id, shopify_connected_at, sync_enabled, paused_at, pause_reason, initial_sync_done, backfill_from")
+      .select("client_id, display_name, created_at, report_config, alert_thresholds, whatsapp_recipients, shopify_store_domain, meta_ad_account_id, ga4_property_id, shopify_connected_at, sync_enabled, paused_at, pause_reason, initial_sync_done, backfill_from, all_orders_access")
       .order("created_at", { ascending: false }),
     supabase.from("user_profiles").select("id, email, display_name, role").neq("role", "admin").order("display_name"),
     supabase.from("client_access").select("user_id, client_id, expires_at"),

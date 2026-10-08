@@ -53,7 +53,7 @@ export function newGroup(kind: GroupKind = "rfm", params: RfmParams = DEFAULT_RF
 
 /** Same customer across groups: by email, falling back to name + phone. */
 export function customerKey(c: SegmentCustomer): string {
-  return (c.email || `${c.firstName} ${c.lastName} ${c.phone}`).trim().toLowerCase();
+  return (c.email || `${c.firstName} ${c.lastName} ${c.phone}`.trim() || `anon:${c.lastOrderDate}:${c.totalSpent}`).trim().toLowerCase();
 }
 
 /** A group that isn't filled in yet (no products picked, no condition value) is ignored. */
@@ -66,7 +66,7 @@ export function isGroupUsable(g: SegmentGroup): boolean {
 export function evaluateGroup(g: SegmentGroup, ctx: SegmentContext): SegmentCustomer[] {
   if (g.kind === "custom") {
     const usable = g.conditions.filter((c) => c.value.trim() !== "").map((c) => ({ column: c.field, operator: c.operator, value: c.value }));
-    return customRecipe(ctx.rows, usable, ctx.shape);
+    return customRecipe(ctx.rows, usable, ctx.shape, undefined, ctx.profiles);
   }
   if (!ctx.profiles) return [];
   if (g.kind === "rfm") return rfmRecipe(ctx.profiles, g.tier, g.params);
@@ -80,7 +80,7 @@ export function evaluateDefinition(def: SegmentDefinition, ctx: SegmentContext):
 
   const chosen = new Map<string, SegmentCustomer>();
   if (includes.length === 0) {
-    for (const c of customRecipe(ctx.rows, [], ctx.shape)) chosen.set(customerKey(c), c);
+    for (const c of customRecipe(ctx.rows, [], ctx.shape, undefined, ctx.profiles)) chosen.set(customerKey(c), c);
   } else {
     for (const g of includes) for (const c of evaluateGroup(g, ctx)) chosen.set(customerKey(c), c);
   }

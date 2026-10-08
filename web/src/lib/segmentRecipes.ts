@@ -36,8 +36,29 @@ function stripLeadingQuote(v: string | undefined): string {
   return v.startsWith("'") ? v.slice(1) : v;
 }
 
+// Indian mobile numbers are written many ways: 9876543210, 919876543210, +91 98765 43210,
+// 91-98765-43210, 09876543210, 0091..., even "9191..." typed twice. All of them are cleaned
+// to the 10-digit number plus country code 91, instead of being rejected. Anything that is
+// not a plausible Indian mobile (starts with 6-9, exactly 10 digits) is left to the general
+// international parser below.
+function cleanIndianMobile(raw: string): string | null {
+  let digits = raw.replace(/\D/g, "");
+  digits = digits.replace(/^0+/, "");
+  while (digits.length > 10 && digits.startsWith("91")) digits = digits.slice(2);
+  digits = digits.replace(/^0+/, "");
+  return digits.length === 10 && /^[6-9]/.test(digits) ? digits : null;
+}
+
 export function splitPhone(rawPhone: string, regionHint?: string): { national: string; countryCode: string } | null {
   if (!rawPhone) return null;
+  // Excel turns long numbers into scientific notation ("9.17235E+11"): the digits are gone.
+  if (/e\+/i.test(rawPhone)) return null;
+  const region = (regionHint || "").toUpperCase();
+  const plus = rawPhone.trim().startsWith("+");
+  if ((region === "" || region === "IN") && (!plus || rawPhone.trim().startsWith("+91"))) {
+    const indian = cleanIndianMobile(rawPhone);
+    if (indian) return { national: indian, countryCode: "91" };
+  }
   try {
     const parsed = parsePhoneNumberFromString(rawPhone, regionHint as CountryCode | undefined);
     if (!parsed || !parsed.isValid()) return null;
@@ -55,6 +76,18 @@ function phoneParts(rawPhone: string, region?: string): Pick<SegmentCustomer, "p
 }
 
 // --- Parsing --------------------------------------------------------------
+
+// Reads a CSV file chosen in the browser. Shopify exports are UTF-8, but a file that was
+// opened and saved again in Excel is usually Windows-1252 (a dash in a product name becomes
+// an invalid byte). Reading that as UTF-8 garbles names, so fall back to Windows-1252.
+export async function readCsvFile(file: File): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+}
 
 export function parseExport(csvText: string): { rows: ExportRow[]; headers: string[] } {
   const result = Papa.parse<ExportRow>(csvText, { header: true, skipEmptyLines: true });
@@ -115,37 +148,57 @@ function collapseToOrders(rows: OrderExportRow[]): OrderExportRow[] {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export type OrderProfile = SegmentCustomer & { products: Set<string> };
+export type OrderProfile = SegmentCustomer & { products: Set<string>; key: string };
+
+// Shopify writes a line item as "Product title - Variant" (for example
+// "Light Grey Cotton Chinos Pant - M/30"). Segments work on the PRODUCT, so every size and
+// colour of a product counts as that product: ticking it once includes all its variants.
+export function productBase(lineItemName: string): string {
+  const t = lineItemName.trim();
+  const i = t.lastIndexOf(" - ");
+  return i > 0 ? t.slice(0, i).trim() : t;
+}
+
+// One customer = one email (any letter case). Orders without an email -- common with
+// cash-on-delivery checkouts -- are kept and matched by phone, then by name, instead of
+// being dropped.
+export function customerIdOf(order: OrderExportRow): string {
+  const email = (order["Email"] || "").trim().toLowerCase();
+  if (email) return `e:${email}`;
+  const digits = (order["Phone"] || order["Billing Phone"] || order["Shipping Phone"] || "").replace(/\D/g, "");
+  if (digits.length >= 7) return `p:${digits.slice(-10)}`;
+  const name = (order["Billing Name"] || order["Shipping Name"] || "").trim().toLowerCase();
+  return name ? `n:${name}` : `o:${order["Name"]}`;
+}
 
 // One profile per customer (grouped by email): order count, spend, latest
 // order date, contact details from their most recent order, and every
 // distinct product they ever bought.
 export function buildOrderProfiles(rows: OrderExportRow[], now: number = Date.now()): OrderProfile[] {
   const orders = collapseToOrders(rows);
-  const emailByOrder = new Map<string, string>();
-  for (const o of orders) emailByOrder.set(o["Name"], o["Email"] || "");
+  const idByOrder = new Map<string, string>();
+  for (const o of orders) idByOrder.set(o["Name"], customerIdOf(o));
 
-  const productsByEmail = new Map<string, Set<string>>();
+  const productsById = new Map<string, Set<string>>();
   for (const row of rows) {
-    const title = (row["Lineitem name"] || "").trim();
-    const email = emailByOrder.get(row["Name"]);
-    if (!title || !email) continue;
-    const set = productsByEmail.get(email) ?? new Set<string>();
+    const title = productBase(row["Lineitem name"] || "");
+    const id = idByOrder.get(row["Name"]);
+    if (!title || !id) continue;
+    const set = productsById.get(id) ?? new Set<string>();
     set.add(title);
-    productsByEmail.set(email, set);
+    productsById.set(id, set);
   }
 
-  const byEmail = new Map<string, OrderExportRow[]>();
+  const byCustomer = new Map<string, OrderExportRow[]>();
   for (const order of orders) {
-    const email = order["Email"];
-    if (!email) continue;
-    const list = byEmail.get(email) ?? [];
+    const id = idByOrder.get(order["Name"])!;
+    const list = byCustomer.get(id) ?? [];
     list.push(order);
-    byEmail.set(email, list);
+    byCustomer.set(id, list);
   }
 
   const profiles: OrderProfile[] = [];
-  for (const [email, customerOrders] of byEmail) {
+  for (const [id, customerOrders] of byCustomer) {
     let latest = customerOrders[0];
     let latestTime = new Date(latest["Created at"]).getTime();
     let totalSpent = 0;
@@ -163,28 +216,50 @@ export function buildOrderProfiles(rows: OrderExportRow[], now: number = Date.no
     const newestFirst = [...customerOrders].sort(
       (x, y) => new Date(y["Created at"]).getTime() - new Date(x["Created at"]).getTime()
     );
-    const withPhone = newestFirst.find((o) => o["Phone"] || o["Billing Phone"]) ?? latest;
+    const phone = bestPhone(newestFirst);
     const [firstName, ...rest] = (latest["Billing Name"] || "").split(" ");
     const validTime = !Number.isNaN(latestTime);
     profiles.push({
-      email,
+      key: id,
+      email: customerOrders.map((o) => o["Email"]).find(Boolean) ?? "",
       firstName: firstName || "",
       lastName: rest.join(" "),
-      ...phoneParts(withPhone["Phone"] || withPhone["Billing Phone"] || "", withPhone["Billing Country"] || undefined),
+      ...phone,
       orders: customerOrders.length,
       totalSpent,
       lastOrderDate: validTime ? new Date(latestTime).toISOString().slice(0, 10) : "",
       recencyDays: validTime ? Math.max(0, Math.floor((now - latestTime) / MS_PER_DAY)) : null,
-      products: productsByEmail.get(email) ?? new Set(),
+      products: productsById.get(id) ?? new Set(),
     });
   }
   return profiles;
 }
 
+// Looks through a customer's orders, newest first, and through every phone column an order
+// has (Phone, Billing Phone, Shipping Phone), and takes the first number that is valid.
+// Values that Excel has turned into scientific notation ("9.17235E+11") are skipped: the
+// digits are already lost and can't be recovered. A customer is "no phone" only when no order
+// has any phone value at all, otherwise "invalid phone".
+function bestPhone(newestFirst: OrderExportRow[]): Pick<SegmentCustomer, "phone" | "countryCode" | "phoneIssue"> {
+  let sawAny = false;
+  for (const o of newestFirst) {
+    const region = o["Billing Country"] || o["Shipping Country"] || undefined;
+    for (const col of ["Phone", "Billing Phone", "Shipping Phone"]) {
+      const raw = stripLeadingQuote(o[col]).trim();
+      if (!raw) continue;
+      sawAny = true;
+      if (/e\+/i.test(raw)) continue;
+      const split = splitPhone(raw, region);
+      if (split) return { phone: split.national, countryCode: split.countryCode, phoneIssue: null };
+    }
+  }
+  return { phone: "", countryCode: "", phoneIssue: sawAny ? "invalid_phone" : "no_phone" };
+}
+
 export function distinctProducts(rows: OrderExportRow[]): string[] {
   const titles = new Set<string>();
   for (const row of rows) {
-    const title = (row["Lineitem name"] || "").trim();
+    const title = productBase(row["Lineitem name"] || "");
     if (title) titles.add(title);
   }
   return Array.from(titles).sort((a, b) => a.localeCompare(b));
@@ -278,7 +353,7 @@ function stripProducts(p: OrderProfile): SegmentCustomer {
 
 // --- Custom conditions ----------------------------------------------------
 
-export type ConditionOperator = "gte" | "lte" | "eq" | "contains";
+export type ConditionOperator = "gte" | "lte" | "eq" | "contains" | "not_contains";
 
 export type FilterCondition = {
   column: string;
@@ -291,12 +366,19 @@ export const OPERATOR_LABELS: Record<ConditionOperator, string> = {
   lte: "is at most",
   eq: "is exactly",
   contains: "contains",
+  not_contains: "does not contain",
 };
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function rowMatchesConditions(row: ExportRow, conditions: FilterCondition[]): boolean {
   return conditions.every((c) => {
-    const raw = row[c.column] ?? "";
+    let raw = row[c.column] ?? "";
     if (c.operator === "contains") return raw.toLowerCase().includes(c.value.toLowerCase());
+    if (c.operator === "not_contains") return !raw.toLowerCase().includes(c.value.toLowerCase());
+    // A date picked in the form ("2026-10-05") is compared with the DAY of a timestamp such as
+    // "2026-10-05 14:02:24 +0530", so "on or before 5 Oct" includes orders placed that afternoon.
+    if (ISO_DAY.test(c.value) && /^\d{4}-\d{2}-\d{2}/.test(raw)) raw = raw.slice(0, 10);
 
     const num = Number(raw);
     const target = Number(c.value);
@@ -313,17 +395,79 @@ function rowMatchesConditions(row: ExportRow, conditions: FilterCondition[]): bo
   });
 }
 
-// Fully custom: the user's own column/operator/value conditions, against
-// either export shape. Orders rows are filtered per ORDER (one row each), and
-// every customer with at least one matching order is returned.
-export function customRecipe(rows: ExportRow[], conditions: FilterCondition[], shape: ExportShape, now: number = Date.now()): SegmentCustomer[] {
+// Columns that belong to ONE LINE ITEM of an order. The export repeats the order on one row
+// per item, so a condition on these is true for an order when ANY of its items satisfies it
+// (an order whose second item is a cotton pant still counts), instead of looking only at the
+// order's first row.
+const LINE_LEVEL_COLUMNS = new Set([
+  "Lineitem name",
+  "Lineitem quantity",
+  "Lineitem price",
+  "Lineitem compare at price",
+  "Lineitem sku",
+  "Lineitem discount",
+  "Lineitem fulfillment status",
+  "Lineitem requires shipping",
+  "Lineitem taxable",
+  "Vendor",
+]);
+
+// Conditions on the CUSTOMER as a whole (all their orders), written "@field" in a condition.
+export const PROFILE_FIELDS = ["@orders", "@totalSpent", "@recencyDays", "@lastOrderDate", "@avgOrderValue"] as const;
+
+function profileRecord(p: SegmentCustomer): ExportRow {
+  return {
+    "@orders": String(p.orders),
+    "@totalSpent": String(p.totalSpent),
+    "@recencyDays": p.recencyDays === null ? "" : String(p.recencyDays),
+    "@lastOrderDate": p.lastOrderDate,
+    "@avgOrderValue": p.orders > 0 ? String(p.totalSpent / p.orders) : "",
+  };
+}
+
+// Fully custom: the user's own column/operator/value conditions, against either export shape.
+//  - order and item conditions pick the ORDERS that match (all of them on the same order);
+//    every customer with at least one matching order is included;
+//  - customer conditions ("@orders" ...) are then checked against each customer's WHOLE
+//    history (all their orders, not only the matching ones), and the customer's order count
+//    and spend in the result are likewise for their whole history.
+export function customRecipe(
+  rows: ExportRow[],
+  conditions: FilterCondition[],
+  shape: ExportShape,
+  now: number = Date.now(),
+  profiles?: OrderProfile[] | null
+): SegmentCustomer[] {
   if (shape === "customers") {
     return rows.filter((r) => rowMatchesConditions(r, conditions)).map(customerFromCustomerRow);
   }
-  const matchingOrders = collapseToOrders(rows).filter((r) => rowMatchesConditions(r, conditions));
-  const matchingNames = new Set(matchingOrders.map((o) => o["Name"]));
-  const filteredRows = rows.filter((r) => matchingNames.has(r["Name"]));
-  return buildOrderProfiles(filteredRows, now).map(stripProducts);
+  const profileConds = conditions.filter((c) => c.column.startsWith("@"));
+  const rowConds = conditions.filter((c) => !c.column.startsWith("@"));
+  const lineConds = rowConds.filter((c) => LINE_LEVEL_COLUMNS.has(c.column));
+  const orderConds = rowConds.filter((c) => !LINE_LEVEL_COLUMNS.has(c.column));
+
+  const all = profiles ?? buildOrderProfiles(rows, now);
+  let allowed: Set<string> | null = null;
+  if (rowConds.length > 0) {
+    const byOrder = new Map<string, OrderExportRow[]>();
+    for (const r of rows) {
+      const list = byOrder.get(r["Name"]) ?? [];
+      list.push(r);
+      byOrder.set(r["Name"], list);
+    }
+    allowed = new Set<string>();
+    for (const lines of byOrder.values()) {
+      const head = lines[0];
+      if (orderConds.length > 0 && !rowMatchesConditions(head, orderConds)) continue;
+      // Every line-level condition must be met by some item; items are tested one condition at
+      // a time, so "product contains cotton AND quantity at least 2" can be met by different items.
+      if (lineConds.length > 0 && !lineConds.every((c) => lines.some((l) => rowMatchesConditions(l, [c])))) continue;
+      allowed.add(customerIdOf(head));
+    }
+  }
+  return all
+    .filter((p) => (allowed === null || allowed.has(p.key)) && (profileConds.length === 0 || rowMatchesConditions(profileRecord(p), profileConds)))
+    .map(stripProducts);
 }
 
 // --- Output template mapping ---------------------------------------------

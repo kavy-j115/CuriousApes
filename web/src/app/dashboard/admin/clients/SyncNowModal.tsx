@@ -22,16 +22,18 @@ function daysAgo(n: number) {
 export default function SyncNowModal({
   clientId,
   name,
+  maxDays = 60,
   defaultFrom,
   onClose,
 }: {
   clientId: string;
   name: string;
+  maxDays?: number;
   defaultFrom: string | null;
   onClose: () => void;
 }) {
   const router = useRouter();
-  const min = daysAgo(60);
+  const min = daysAgo(maxDays);
   const yesterday = daysAgo(1);
   const monthStart = iso(new Date(new Date(Date.now() - DAY).setUTCDate(1)));
   const initial = defaultFrom && defaultFrom >= min ? defaultFrom : monthStart;
@@ -71,7 +73,14 @@ export default function SyncNowModal({
     { label: "This month so far", value: monthStart },
     { label: "Last 7 days", value: daysAgo(7) },
     { label: "Last 30 days", value: daysAgo(30) },
-    { label: "Last 60 days", value: min },
+    { label: "Last 60 days", value: daysAgo(60) },
+    ...(maxDays > 60
+      ? [
+          { label: "Last 6 months", value: daysAgo(182) },
+          { label: "Last year", value: daysAgo(365) },
+          { label: "Everything (up to 5 years)", value: min },
+        ]
+      : []),
   ];
   const days = Math.max(0, Math.round((Date.parse(yesterday) - Date.parse(from)) / DAY) + 1);
 

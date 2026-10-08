@@ -34,11 +34,29 @@ export async function getShopifyClientSecret(): Promise<string> {
   return data as string;
 }
 
-export async function storeShopifyToken(clientId: string, token: string): Promise<void> {
+// A public app must use EXPIRING offline tokens (about an hour, with a 90-day refresh token that
+// is replaced on every refresh). Switch on with SHOPIFY_EXPIRING_TOKENS=1 once the app is public;
+// the pipeline refreshes them (src/connectors/shopify_token.py).
+export function expiringTokensEnabled(): boolean {
+  return process.env.SHOPIFY_EXPIRING_TOKENS === "1";
+}
+
+export type TokenBundle = { accessToken: string; refreshToken: string; expiresIn: number; refreshExpiresIn: number };
+
+export async function storeShopifyToken(clientId: string, token: string | TokenBundle): Promise<void> {
+  const value =
+    typeof token === "string"
+      ? token
+      : JSON.stringify({
+          access_token: token.accessToken,
+          refresh_token: token.refreshToken,
+          expires_at: new Date(Date.now() + token.expiresIn * 1000).toISOString(),
+          refresh_expires_at: new Date(Date.now() + token.refreshExpiresIn * 1000).toISOString(),
+        });
   const admin = getAdminClient();
   const { error } = await admin.rpc("set_vault_secret", {
     p_name: tokenSecretName(clientId),
-    p_value: token,
+    p_value: value,
     p_description: `Shopify Admin API token for ${clientId} (installed via OAuth)`,
   });
   if (error) throw new Error("Couldn't store the Shopify token in Vault.");

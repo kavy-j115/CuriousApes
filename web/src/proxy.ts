@@ -45,11 +45,15 @@ export async function proxy(request: NextRequest) {
   // has no account in this app. The route verifies Shopify's HMAC and our
   // signed state itself instead of relying on a session.
   const isShopifyCallback =
-    request.nextUrl.pathname === "/api/shopify/callback" || request.nextUrl.pathname === "/api/shopify/install";
+    request.nextUrl.pathname === "/api/shopify/callback" ||
+    request.nextUrl.pathname === "/api/shopify/install" ||
+    request.nextUrl.pathname === "/api/shopify/webhooks"; // Shopify's signed privacy / uninstall webhooks
+  // The public pages Shopify's app listing links to (privacy policy, terms, support).
+  const isPublicInfoPage = ["/privacy", "/terms", "/support"].includes(request.nextUrl.pathname);
   // Meta's WhatsApp webhook: no session, the route checks Meta's HMAC signature.
   const isWhatsappWebhook = request.nextUrl.pathname === "/api/whatsapp/webhook";
 
-  if (!data?.claims && !isLoginPage && !isShopifyCallback && !isWhatsappWebhook) {
+  if (!data?.claims && !isLoginPage && !isShopifyCallback && !isWhatsappWebhook && !isPublicInfoPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

@@ -6,6 +6,7 @@ import { Upload } from "lucide-react";
 import GroupBuilder from "./GroupBuilder";
 import {
   parseExport,
+  readCsvFile,
   looksLikeOrdersExport,
   looksLikeCustomersExport,
   buildOrderProfiles,
@@ -16,7 +17,7 @@ import {
   type RfmParams,
 } from "@/lib/segmentRecipes";
 import { aggregateProductStats } from "@/lib/productAnalytics";
-import { ORDER_FRIENDLY_FIELDS } from "@/lib/segmentFriendlyFields";
+import { orderFieldsPresentIn } from "@/lib/segmentFriendlyFields";
 import { evaluateDefinition, evaluateGroup, newGroup, type SegmentDefinition } from "@/lib/segmentGroups";
 
 type SortKey = "unitsSold" | "orderCount" | "revenue";
@@ -40,7 +41,7 @@ export default function ProductsClient() {
   async function handleFile(file: File) {
     setRows(null);
     setFileName(file.name);
-    const { rows, headers } = parseExport(await file.text());
+    const { rows, headers } = parseExport(await readCsvFile(file));
     if (!looksLikeOrdersExport(headers)) {
       setFileWarning(
         looksLikeCustomersExport(headers)
@@ -117,7 +118,7 @@ export default function ProductsClient() {
                 onChange={(next) => setDefinition((d) => ({ ...d, include: next }))}
                 shape="orders"
                 products={products}
-                fields={ORDER_FRIENDLY_FIELDS}
+                fields={rows ? orderFieldsPresentIn(rows) : []}
                 defaultParams={defaultParams}
                 counts={includeCounts}
               />
@@ -127,7 +128,7 @@ export default function ProductsClient() {
                 onChange={(next) => setDefinition((d) => ({ ...d, exclude: next }))}
                 shape="orders"
                 products={products}
-                fields={ORDER_FRIENDLY_FIELDS}
+                fields={rows ? orderFieldsPresentIn(rows) : []}
                 defaultParams={defaultParams}
                 counts={excludeCounts}
               />

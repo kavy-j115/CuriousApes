@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Search, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Search, Trash2 } from "lucide-react";
 import { notify, withToast } from "@/lib/notify";
 import Select from "../../_components/Select";
 import Link from "next/link";
@@ -17,6 +17,32 @@ const RESULT_MESSAGES: Record<string, string> = {
   expired: "That login link expired. Try Connect Meta again.",
   failed: "Meta didn't complete the connection. Try again, and check the app settings if it repeats.",
 };
+
+// The ad account ID is hidden like a password; the eye button shows it for that row only.
+function MaskedId({ value }: { value: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <input
+        type={shown ? "text" : "password"}
+        value={value}
+        readOnly
+        aria-label="Ad account ID"
+        autoComplete="off"
+        className="w-36 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-300 focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        aria-label={shown ? "Hide ad account ID" : "Show ad account ID"}
+        title={shown ? "Hide" : "Show"}
+        className="rounded p-1 text-zinc-500 hover:bg-zinc-900 hover:text-accent"
+      >
+        {shown ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+    </span>
+  );
+}
 
 const norm = (s: string) =>
   s.toLowerCase().replace(/\(read-only\)|private limited|pvt\.? ?ltd\.?|limited|\bltd\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
@@ -282,7 +308,9 @@ export default function MetaAccounts({
                     {newIds.has(a.id) && <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium text-accent">new</span>}
                     {!a.active && <span className="ml-2 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">not active</span>}
                   </td>
-                  <td className="px-3 py-1.5 font-mono text-xs">{a.id}</td>
+                  <td className="px-3 py-1.5">
+                    <MaskedId value={a.id} />
+                  </td>
                   <td className="px-3 py-1.5 text-xs text-zinc-500">{a.business || "—"}</td>
                   <td className="px-3 py-1.5">
                     {focus && (

@@ -25,15 +25,19 @@ VIEWS = ["mtd", "7d", "yesterday"]
 
 
 def _view_label(view: str, start, end) -> str:
-    """Says exactly what period a picture covers, so a finished month is never
-    mistaken for the new, still-empty one (on the 1st, "month to date" is the
-    whole previous month)."""
+    """Says exactly what period a picture covers, with its dates, so a finished month
+    is never mistaken for the new, still-empty one (on the 1st, "month to date" is
+    the whole previous month). Used in the picture's title and, after the brand
+    name, in the WhatsApp caption:
+        yesterday ->  5 Oct 2026
+        7d        ->  28 Sep to 4 Oct 2026
+        mtd       ->  1 Oct to 5 Oct 2026   (or "Monthly report - October 2026" for a full month)"""
     if view == "mtd":
         full_month = (end + timedelta(days=1)).day == 1
-        return f"{end:%B %Y} - full month" if full_month else f"{end:%B %Y} - 1 to {end.day} {end:%b}"
+        return f"Monthly report - {end:%B %Y}" if full_month else f"{start.day} {start:%b} to {end.day} {end:%b %Y}"
     if view == "7d":
-        return f"Last 7 days ({start:%d %b} - {end:%d %b})"
-    return f"{end:%d %b %Y}"
+        return f"{start.day} {start:%b} to {end.day} {end:%b %Y}"
+    return f"{end.day} {end:%b %Y}"
 
 
 def _view_rows(conn, client_id: str, view: str) -> tuple[list[dict], str]:

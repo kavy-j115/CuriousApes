@@ -1,9 +1,10 @@
 "use client";
 import Select from "../_components/Select";
+import MultiSelect from "../_components/MultiSelect";
 
 export type FieldType = "number" | "date" | "text";
 export type FieldDef = { key: string; label: string; type: FieldType };
-export type Operator = "gte" | "lte" | "eq" | "contains";
+export type Operator = "gte" | "lte" | "eq" | "contains" | "not_contains";
 export type Condition = { field: string; operator: Operator; value: string };
 
 const OPERATORS_BY_TYPE: Record<FieldType, { value: Operator; label: string }[]> = {
@@ -19,6 +20,7 @@ const OPERATORS_BY_TYPE: Record<FieldType, { value: Operator; label: string }[]>
   ],
   text: [
     { value: "contains", label: "contains" },
+    { value: "not_contains", label: "does not contain" },
     { value: "eq", label: "is exactly" },
   ],
 };
@@ -66,14 +68,17 @@ export default function ConditionBuilder({
         const type = fieldType(c.field);
         return (
           <div key={i} className="flex flex-wrap items-center gap-2">
-            <Select
-              value={c.field}
-              onChange={(v) => update(i, { field: v, operator: OPERATORS_BY_TYPE[fieldType(v)][0].value })}
-            >
-              {fields.map((f) => (
-                <option key={f.key} value={f.key}>{f.label}</option>
-              ))}
-            </Select>
+            {/* Searchable, scrolling list (many fields) instead of a plain select. */}
+            <MultiSelect
+              single
+              placeholder="Choose a field"
+              options={fields.map((f) => ({ id: f.key, label: f.label }))}
+              selected={c.field ? [c.field] : []}
+              onChange={(ids) => {
+                const v = ids[0];
+                if (v) update(i, { field: v, operator: OPERATORS_BY_TYPE[fieldType(v)][0].value });
+              }}
+            />
             <Select value={c.operator} onChange={(v) => update(i, { operator: v as Operator })}>
               {OPERATORS_BY_TYPE[type].map((op) => (
                 <option key={op.value} value={op.value}>{op.label}</option>
