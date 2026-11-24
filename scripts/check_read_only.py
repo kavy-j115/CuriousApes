@@ -60,6 +60,8 @@ def main() -> int:
                 continue
             if rel == "src/connectors/shopify.py" and stripped == "mutation($q: String!) {":
                 continue  # the one approved call: Shopify's bulk order EXPORT (read-only in effect)
+            if "scope" in stripped.lower() and re.search(r"\bwrite_[a-z_]+", stripped):
+                problems.append(f"{rel}:{line_no}: Shopify write_ scope requested: {stripped[:100]}")
             for pattern, label in checks:
                 if pattern.search(line):
                     problems.append(f"{rel}:{line_no}: {label}: {stripped[:100]}")

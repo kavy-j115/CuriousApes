@@ -24,6 +24,9 @@ def main():
             applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
         );
     """)
+    # Not exposed through the public API: RLS on and no policy means only direct database
+    # connections (this script) can read or write it.
+    cur.execute("ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;")
     conn.commit()
 
     cur.execute("SELECT filename FROM schema_migrations;")

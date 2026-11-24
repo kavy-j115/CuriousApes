@@ -43,9 +43,13 @@ Shopify requires every App Store app to have a UI merchants can open in the admi
    - App URL: `<site>/api/shopify/install`
    - Allowed redirection URL: `<site>/api/shopify/callback`
    - Use the legacy install flow (authorization code grant).
-3. **Scopes**: `read_orders,read_customers,read_products,read_reports`. Request **protected customer
-   data** access (names, emails, phones). For `read_all_orders` see the next section: do NOT put it in
-   the app version until Shopify has approved it, or creating the version fails.
+3. **Scopes**: the full read-only list, identical to `DEFAULT_SCOPES` in `web/src/lib/shopifyConfig.ts`
+   (orders, draft orders, fulfillments, returns, customers and their events, products, inventory,
+   locations, publications, markets, reports, analytics, marketing events, discounts, gift cards,
+   shipping, Shopify Payments payouts). **No `write_*` scope ever** (`scripts/check_read_only.py` fails
+   if one appears). Drop any scope the dashboard picker rejects, from both places. Request **protected
+   customer data** access (names, emails, phones). For `read_all_orders` see the next section: do NOT
+   put it in the app version until Shopify has approved it, or creating the version fails.
 4. **Webhooks** (set in the app's configuration, not through the API):
    - Compliance: `customers/data_request`, `customers/redact`, `shop/redact` -> `<site>/api/shopify/webhooks`
    - `app/uninstalled` -> `<site>/api/shopify/webhooks`

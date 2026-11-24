@@ -21,3 +21,8 @@ reports/output/
 
 # Logs
 *.log
+
+# Loose working files at the repo root (decks, overview notes, screenshots, logo drafts) -- not source
+/PROJECT_OVERVIEW.md
+/*.pptx
+/*.png

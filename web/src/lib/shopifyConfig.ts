@@ -9,6 +9,24 @@ export function tokenSecretName(clientId: string): string {
   return `${clientId}.shopify.access_token`;
 }
 
+// Read-only scopes only (house rule: we never write to Shopify). Must match the scopes declared in
+// the app version in the dashboard; a scope requested here but not declared there is rejected.
+// read_all_orders is NOT here: add it (SHOPIFY_SCOPES) only once Shopify has approved it.
+const DEFAULT_SCOPES = [
+  // orders
+  "read_orders", "read_draft_orders", "read_fulfillments", "read_assigned_fulfillment_orders",
+  "read_merchant_managed_fulfillment_orders", "read_returns", "read_marketplace_orders",
+  // customers
+  "read_customers", "read_customer_events", "read_customer_merge", "read_customer_data_erasure",
+  // products and inventory
+  "read_products", "read_inventory", "read_locations", "read_product_listings", "read_publications",
+  "read_markets", "read_locales",
+  // analytics and marketing
+  "read_reports", "read_analytics", "read_marketing_events", "read_pixels",
+  // pricing, discounts, money
+  "read_discounts", "read_price_rules", "read_gift_cards", "read_shipping", "read_shopify_payments_payouts",
+].join(",");
+
 export function shopifyEnv(): { clientId: string; scopes: string; siteUrl: string } {
   const clientId = process.env.SHOPIFY_CLIENT_ID;
   const siteUrl = process.env.SITE_URL;
@@ -18,7 +36,7 @@ export function shopifyEnv(): { clientId: string; scopes: string; siteUrl: strin
   return {
     clientId,
     siteUrl: siteUrl.replace(/\/+$/, ""),
-    scopes: process.env.SHOPIFY_SCOPES ?? "read_orders,read_customers,read_products,read_reports",
+    scopes: process.env.SHOPIFY_SCOPES || DEFAULT_SCOPES,
   };
 }
 
