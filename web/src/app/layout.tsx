@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/lib/appName";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Curious Apes",
+  title: APP_NAME,
   description: "D2C data automation & AI analytics platform",
 };
 

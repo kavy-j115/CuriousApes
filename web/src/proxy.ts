@@ -47,9 +47,10 @@ export async function proxy(request: NextRequest) {
   const isShopifyCallback =
     request.nextUrl.pathname === "/api/shopify/callback" ||
     request.nextUrl.pathname === "/api/shopify/install" ||
-    request.nextUrl.pathname === "/api/shopify/webhooks"; // Shopify's signed privacy / uninstall webhooks
+    request.nextUrl.pathname === "/api/shopify/webhooks" || // Shopify's signed privacy / uninstall webhooks
+    request.nextUrl.pathname === "/shopify-app"; // the app's home inside the Shopify admin (checks Shopify's own signature)
   // The public pages Shopify's app listing links to (privacy policy, terms, support).
-  const isPublicInfoPage = ["/privacy", "/terms", "/support"].includes(request.nextUrl.pathname);
+  const isPublicInfoPage = ["/privacy", "/terms", "/support", "/connected"].includes(request.nextUrl.pathname);
   // Meta's WhatsApp webhook: no session, the route checks Meta's HMAC signature.
   const isWhatsappWebhook = request.nextUrl.pathname === "/api/whatsapp/webhook";
 

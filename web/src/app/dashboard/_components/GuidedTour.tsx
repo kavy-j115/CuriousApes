@@ -1,5 +1,6 @@
 "use client";
 
+import { APP_NAME } from "@/lib/appName";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { disablePageTours, markPageTourSeen, markTourSeen } from "../tourActions";
@@ -21,7 +22,7 @@ const DASHBOARD_STEPS: Record<string, Step> = {
 
 function stepsFor(role: Role): Step[] {
   const s = DASHBOARD_STEPS;
-  const steps: Step[] = [{ title: "Welcome to Curious Apes", body: "A quick tour of where everything is. It takes under a minute." }];
+  const steps: Step[] = [{ title: `Welcome to ${APP_NAME}`, body: "A quick tour of where everything is. It takes under a minute." }];
   if (role !== "client") {
     steps.push({ target: "client-dropdown", title: "Client switcher", body: "Choose which client you're viewing. It stays selected as you move between pages." });
   }
@@ -45,7 +46,7 @@ const PAGE_TOURS: Record<string, Step[]> = {
     { target: "report-views", title: "Table or chart", body: "Switch between the daily table and charts of the same days." },
     { target: "report-dates", title: "Date range", body: "\"This month\" shows every day from the 1st up to yesterday with a Total row. Today appears tomorrow, once the day is complete. Pick 7D, 30D, 90D or Custom to see a different range instead." },
     { target: "report-download", title: "Download", body: "Downloads an Excel file of exactly what is on screen, in the same format." },
-    { target: "report-table", title: "The report", body: "One row per day and a Total row at the bottom. PROAS is coloured green when it reaches the client's ideal ROAS and fades towards red as it drops." },
+    { target: "report-table", title: "The report", body: "One row per day and a Total row at the bottom. PROAS is coloured by rank: the lowest day is red, the median yellow and the best day green; the Total is always green." },
   ],
   "/dashboard/comparisons": [
     { target: "compare-controls", title: "Choose two periods", body: "Pick a preset or set the dates for Period A and Period B, then compare." },
@@ -64,7 +65,7 @@ const PAGE_TOURS: Record<string, Step[]> = {
     { target: "collab-panel", title: "Share a client", body: "Pick one of your clients and a colleague to give them access for 24 hours. You can end it early from the list below." },
   ],
   "/dashboard/admin/clients": [
-    { target: "client-create", title: "Add a client", body: "Brand name, the client's login email, their Shopify store and GA4 ID, the ideal ROAS, alert limits and WhatsApp numbers. Link their Meta ad account on the Meta Accounts page. Syncing stays off until you switch it on, and the first sync loads up to 60 days of Shopify in one bulk export, and 3 days of Meta." },
+    { target: "client-create", title: "Add a client", body: "Brand name, the client's login email, their Shopify store and GA4 ID, alert limits and WhatsApp numbers. Link their Meta ad account on the Meta Accounts page. Syncing stays off until you switch it on, and the first sync loads up to 60 days of Shopify in one bulk export, and 3 days of Meta." },
     { target: "client-table", title: "Manage clients", body: "Each row has its report columns and colours, alerts and WhatsApp numbers, access, connections and the sync switch." },
   ],
   "/dashboard/admin/users": [

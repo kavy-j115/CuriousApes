@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminClient } from "@/lib/supabase/admin";
+import { ensureClientForShop } from "@/lib/shopifyStores";
 import { SHOP_DOMAIN_PATTERN, buildInstallUrl, signState, verifyShopifyHmac } from "@/lib/shopifyOAuth";
 import { getShopifyClientSecret, redirectUri, shopifyEnv } from "@/lib/shopifyConfig";
 
@@ -9,8 +9,7 @@ import { getShopifyClientSecret, redirectUri, shopifyEnv } from "@/lib/shopifyCo
 // authorization. We verify the signature, look the store up in our clients
 // table, and forward to Shopify's authorize page with our signed state --
 // so Shopify's link alone completes the whole install, no second link.
-// Reachable without a login (proxy.ts exempts it): trust comes from
-// Shopify's HMAC plus the store having been added as a client by an admin.
+// Reachable without a login (proxy.ts exempts it): trust comes from Shopify's HMAC.
 
 function page(title: string, message: string, status: number) {
   const html = `<!doctype html><meta charset="utf-8"><title>${title}</title>
@@ -38,14 +37,18 @@ export async function GET(request: NextRequest) {
     return page("Invalid request", "This request couldn't be verified.", 400);
   }
 
-  const { data: client } = await getAdminClient()
-    .from("clients")
-    .select("client_id")
-    .ilike("shopify_store_domain", shop)
-    .maybeSingle();
-  if (!client) {
-    return page("Store not registered", "This store hasn't been set up by the agency yet. Please contact them.", 404);
+  // Opened inside the Shopify admin (embedded) -> the app's home page, not a new install.
+  if (params.get("embedded") === "1" || params.get("id_token")) {
+    const target = new URL("/shopify-app", request.url);
+    params.forEach((v, k) => target.searchParams.set(k, v));
+    return NextResponse.redirect(target);
   }
+
+  // Any store may start the install (Shopify's review installs on its own test store). A store that is
+  // not a client yet is created "pending approval": sync off, nothing fetched until an admin approves.
+  const resolved = await ensureClientForShop(shop);
+  if (!resolved) return page("Couldn't start the install", "Please try again in a moment.", 500);
+  const client = { client_id: resolved.clientId };
 
   try {
     const { clientId, scopes } = shopifyEnv();

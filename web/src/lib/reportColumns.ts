@@ -95,7 +95,6 @@ export type ReportConfig = {
   headerColor?: string;
   // The client's target PROAS. At or above it the cell is green, fading
   // linearly through yellow to red as PROAS drops towards 0.
-  idealRoas?: number;
 } | null;
 
 export const ALL_METRIC_KEYS: MetricKey[] = [
@@ -152,11 +151,9 @@ export function defaultLabel(key: MetricKey): string {
   return AVAILABLE_METRICS.find((m) => m.key === key)?.defaultLabel ?? key;
 }
 
-// PROAS colouring: a smooth red -> yellow -> green gradient. With the client's
-// ideal ROAS set, colour is linear in PROAS / idealRoas -- ideal (or better) is
-// green, half of ideal is yellow, 0 is red -- so there are no fixed thresholds.
-// Without an ideal ROAS it falls back to the table's own values (lowest = red,
-// median = yellow, highest = green); pass every row shown, Total row included.
+// PROAS colouring, as in the analyst's sheets: a smooth red -> yellow -> green gradient positioned
+// by rank among the DAILY rows (lowest red, median yellow, highest green); the Total cell is
+// always green. There are no fixed thresholds.
 const SCALE_RED = [248, 105, 107];
 const SCALE_YELLOW = [255, 235, 132];
 const SCALE_GREEN = [99, 190, 123];
@@ -171,15 +168,10 @@ function gradient(t: number): CSSProperties {
   return { backgroundColor: `rgba(${rgb.join(",")},0.5)` };
 }
 
-export function proasColorScale(rows: ReportRow[], idealRoas?: number): (r: ReportRow) => CSSProperties | undefined {
-  if (idealRoas && idealRoas > 0) {
-    return (r) => {
-      if (r.proas === null || r.proas === undefined) return undefined;
-      const v = Number(r.proas);
-      return Number.isNaN(v) ? undefined : gradient(v / idealRoas);
-    };
-  }
-
+export function proasColorScale(allRows: ReportRow[]): (r: ReportRow) => CSSProperties | undefined {
+  // The Total row is coloured green and is not part of the ranking.
+  const rows = allRows.filter((r) => r.report_date !== "Total");
+  const isTotal = (r: ReportRow) => r.report_date === "Total";
   const values = rows
     .map((r) => r.proas)
     .filter((v) => v !== null && v !== undefined)
@@ -195,6 +187,7 @@ export function proasColorScale(rows: ReportRow[], idealRoas?: number): (r: Repo
 
   return (r) => {
     if (r.proas === null || r.proas === undefined) return undefined;
+    if (isTotal(r)) return gradient(1);
     const v = Number(r.proas);
     if (Number.isNaN(v)) return undefined;
     // Same gradient, positioned by rank within the table: min 0, median 0.5, max 1.
@@ -211,7 +204,7 @@ export function proasColorScale(rows: ReportRow[], idealRoas?: number): (r: Repo
 // rows (and Total row) the PROAS colour scale is computed over.
 export function resolveReportColumns(config: ReportConfig, scaleRows: ReportRow[] = []): ColumnDef[] {
   const dayColumn: ColumnDef = { key: "report_date", label: "Day", fmt: (r) => r.report_date };
-  const proasStyle = proasColorScale(scaleRows, config?.idealRoas);
+  const proasStyle = proasColorScale(scaleRows);
 
   function toColumnDef(key: MetricKey, label: string): ColumnDef {
     return {

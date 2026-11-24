@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/lib/appName";
 export const metadata = { title: "Terms of service" };
 
 // DRAFT for legal review before the app is submitted.
@@ -5,18 +6,17 @@ export default function TermsPage() {
   return (
     <>
       <h1>Terms of service</h1>
-      <p className="text-zinc-500">Curious Apes reporting app for Shopify stores. Last updated: October 2026.</p>
+      <p className="text-zinc-500">{APP_NAME} reporting app for Shopify stores. Last updated: October 2026.</p>
 
       <h2>The service</h2>
       <p>
-        Curious Apes reads your Shopify store&apos;s data and presents reports, alerts and customer lists to you and to the agency that
-        manages your marketing. By installing the app you allow it to read your store&apos;s orders, customers, products and analytics.
+        {APP_NAME} reads your Shopify store&apos;s data and presents reports, alerts and customer lists to you and to your marketing team. By installing the app you allow it to read your store&apos;s orders, customers, products and analytics.
       </p>
 
       <h2>Your responsibilities</h2>
       <p>
-        You confirm you may connect the store and that your own customer privacy notices allow your agency to use customer data for the
-        marketing it runs on your behalf. Use of customer lists (for example for WhatsApp or email campaigns) must follow the law that applies
+        You confirm you may connect the store and that your own customer privacy notices allow your marketing team to use customer data for
+        your marketing. Use of customer lists (for example for WhatsApp or email campaigns) must follow the law that applies
         to you, including consent rules.
       </p>
 

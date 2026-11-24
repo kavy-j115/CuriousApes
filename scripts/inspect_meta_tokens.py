@@ -25,7 +25,7 @@ from src.notifications.whatsapp import GRAPH_API_VERSION
 load_dotenv()
 
 APP_ID = "1663660461993023"  # the "report automation" Meta app (not a secret)
-TOKEN_NAMES = ["agency.meta_ads.access_token", "diruno-fashion.meta_ads.access_token"]
+TOKEN_NAMES = ["diruno-fashion.meta_ads.access_token"]  # the old shared agency token was deleted 2026-10-08
 GRAPH = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
 

@@ -22,8 +22,9 @@ from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.comments import Comment
 from openpyxl.utils import get_column_letter
 
+
 from src.reports.formula_eval import evaluate_formula, FormulaError
-from src.reports.report_columns import resolve_columns, resolve_derived_columns, resolve_header_color, resolve_ideal_roas
+from src.reports.report_columns import resolve_columns, resolve_derived_columns, resolve_header_color
 
 FONT_NAME = "Arial"
 TITLE_FONT = Font(name=FONT_NAME, bold=True, size=14)
@@ -189,25 +190,18 @@ def generate_report(rows: list[dict], display_name: str, output_path: str, repor
             # else: a column this ratio needs isn't in this client's report --
             # left blank rather than guessed.
 
-    # PROAS: a red -> yellow -> green gradient. With the client's ideal ROAS it
-    # is anchored at 0 (red), half of ideal (yellow) and ideal (green) -- linear,
-    # no other thresholds. Without one it spans the table's own values.
+    # PROAS, as in the analyst's sheets: a red -> yellow -> green scale over the DAILY rows (lowest
+    # red, median yellow, highest green) and the Total cell always green.
     if rows and "proas" in keys:
         pl = col_letter("proas")
-        ideal = resolve_ideal_roas(report_config)
-        if ideal:
-            rule = ColorScaleRule(
-                start_type="num", start_value=0, start_color="F8696B",
-                mid_type="num", mid_value=ideal / 2, mid_color="FFEB84",
-                end_type="num", end_value=ideal, end_color="63BE7B",
-            )
-        else:
-            rule = ColorScaleRule(
-                start_type="min", start_color="F8696B",
-                mid_type="percentile", mid_value=50, mid_color="FFEB84",
-                end_type="max", end_color="63BE7B",
-            )
-        ws.conditional_formatting.add(f"{pl}{first_data_row}:{pl}{total_row}", rule)
+        rule = ColorScaleRule(
+            start_type="min", start_color="F8696B",
+            mid_type="percentile", mid_value=50, mid_color="FFEB84",
+            end_type="max", end_color="63BE7B",
+        )
+        last_day_row = total_row - 1 if total_row > first_data_row else total_row
+        ws.conditional_formatting.add(f"{pl}{first_data_row}:{pl}{last_day_row}", rule)
+        ws[f"{pl}{total_row}"].fill = PatternFill("solid", fgColor="63BE7B")
 
     for col_idx in range(1, n_cols + 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = 16

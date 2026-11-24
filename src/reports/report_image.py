@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 from src.reports.business_health_report import (
     SUM_KEYS, LAST_KEYS, _is_dark, _num, _derived_value, compute_totals,
 )
-from src.reports.report_columns import resolve_columns, resolve_derived_columns, resolve_header_color, resolve_ideal_roas
+from src.reports.report_columns import resolve_columns, resolve_derived_columns, resolve_header_color
 
 FONT_SIZE = 15
 PAD_X, PAD_Y = 10, 7
@@ -36,10 +36,10 @@ def _fmt(value, number_format: str) -> str:
         d = value if isinstance(value, (date, datetime)) else datetime.fromisoformat(str(value))
         return d.strftime("%d-%m-%Y")
     v = float(value)
-    # Whole numbers throughout the picture. PROAS (a small ratio such as 2.4) keeps one
-    # decimal, since rounding it to a whole number would change what it says.
+    # As in the analyst's sheets: money and counts are whole numbers, percentages and PROAS keep
+    # one decimal (10.3%, 3.3).
     if number_format == "0.0%":
-        return f"{v * 100:.0f}%"
+        return f"{v * 100:.1f}%"
     if number_format == "0.0":
         return f"{v:.1f}"
     return f"{v:,.0f}"
@@ -121,19 +121,13 @@ def render_report_png(rows: list[dict], title: str, output_path: str, report_con
     fill = tuple(int(header_color[i:i + 2], 16) for i in (0, 2, 4))
     text_color = "white" if _is_dark(header_color) else "black"
 
-    # PROAS gradient over data rows + Total: with the client's ideal ROAS it is
-    # linear in value / ideal (0 red, half yellow, ideal+ green); without one it
-    # is positioned by rank within the table (min red, median yellow, max green).
+    # PROAS colours, as in the analyst's sheets: positioned by rank among the DAILY rows (lowest
+    # red, median yellow, highest green) and the Total cell always green.
     proas_colors: dict[int, tuple] = {}
     if "proas" in keys:
-        ideal = resolve_ideal_roas(report_config)
         vals = [(i, _num(v.get("proas"))) for i, v in enumerate(values_by_row)]
-        present = sorted(v for _, v in vals if v is not None)
-        if ideal:
-            for i, v in vals:
-                if v is not None:
-                    proas_colors[i] = _scale_color(min(1.0, max(0.0, v / ideal)))
-        elif present:
+        present = sorted(v for i, v in vals if v is not None and i < len(vals) - 1)  # not the Total row
+        if present:
             lo, hi, mid = present[0], present[-1], present[len(present) // 2]
             for i, v in vals:
                 if v is None:
@@ -145,6 +139,9 @@ def render_report_png(rows: list[dict], title: str, output_path: str, report_con
                 else:
                     t = 0.5 + 0.5 * (v - mid) / (hi - mid) if hi > mid else 0.5
                 proas_colors[i] = _scale_color(t)
+        # The Total cell is green in the analyst's sheets whatever its value.
+        if values_by_row and values_by_row[-1].get("proas") is not None:
+            proas_colors[len(values_by_row) - 1] = _scale_color(1.0)
 
     x = 0
     for i, lines in enumerate(header_lines):

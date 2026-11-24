@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/lib/appName";
 export const metadata = { title: "Support" };
 
 const CONTACT = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
@@ -6,7 +7,7 @@ export default function SupportPage() {
   return (
     <>
       <h1>Support</h1>
-      <p>Need help with the Curious Apes reporting app for your Shopify store?</p>
+      <p>Need help with the {APP_NAME} reporting app for your Shopify store?</p>
       <h2>Contact</h2>
       <p>
         {CONTACT ? (
@@ -14,7 +15,7 @@ export default function SupportPage() {
             Email <a className="text-accent underline" href={`mailto:${CONTACT}`}>{CONTACT}</a> and mention your store address. We reply within one business day.
           </>
         ) : (
-          <>Contact the agency that connected your store, and mention your store address.</>
+          <>Contact the team that connected your store, and mention your store address.</>
         )}
       </p>
       <h2>Common questions</h2>

@@ -13,6 +13,7 @@ import {
   deleteClientRecord,
   pauseClient,
   resumeClient,
+  approveInstalledClient,
   updateClientReportConfig,
   resetUserPassword,
   updateClientNotifications,
@@ -44,6 +45,7 @@ export type ClientRowData = {
   initial_sync_done: boolean;
   backfill_from?: string | null;
   all_orders_access?: boolean;
+  pending_approval?: boolean;
   meta_account_name?: string | null;
 };
 
@@ -111,7 +113,6 @@ export default function ClientRow({
     Object.fromEntries((client.report_config?.columns ?? []).map((c) => [c.key, c.label]))
   );
   const [headerColor, setHeaderColor] = useState(client.report_config?.headerColor ? `#${client.report_config.headerColor.replace(/^#/, "")}` : "");
-  const [idealRoas, setIdealRoas] = useState(client.report_config?.idealRoas ? String(client.report_config.idealRoas) : "");
   const [derivedColumns, setDerivedColumns] = useState<DerivedColumn[]>(client.report_config?.derivedColumns ?? []);
   const [revenuePct, setRevenuePct] = useState(String(client.alert_thresholds?.revenue_change_pct ?? ""));
   const [cacPct, setCacPct] = useState(String(client.alert_thresholds?.cac_change_pct ?? ""));
@@ -196,10 +197,7 @@ export default function ClientRow({
       const color = /^#[0-9a-fA-F]{6}$/.test(headerColor) ? headerColor.slice(1) : undefined;
       const validDerived = derivedColumns.filter((dc) => dc.key.trim() && dc.label.trim() && dc.formula.trim() && !formulaError(derivedColumns.indexOf(dc)));
 
-      const ideal = Number(idealRoas);
-      const idealValue = idealRoas.trim() && Number.isFinite(ideal) && ideal > 0 ? ideal : undefined;
-
-      if (useDefault && !color && validDerived.length === 0 && idealValue === undefined) {
+      if (useDefault && !color && validDerived.length === 0) {
         await withToast(() => updateClientReportConfig(client.client_id, null), "Report settings saved");
         return;
       }
@@ -216,7 +214,6 @@ export default function ClientRow({
             columns,
             derivedColumns: validDerived.length > 0 ? validDerived : undefined,
             headerColor: color,
-            idealRoas: idealValue,
           }),
         "Report settings saved"
       );
@@ -240,6 +237,12 @@ export default function ClientRow({
     if (!confirm(`Disconnect ${client.display_name}? It is hidden from every screen and nothing is fetched. Credentials and stored data are kept, and Reconnect brings it back and fills the missed days. Nothing is changed on Shopify or Meta.`)) return;
     startTransition(async () => {
       await withToast(() => pauseClient(client.client_id), "Client disconnected");
+    });
+  }
+
+  function handleApprove() {
+    startTransition(async () => {
+      await withToast(() => approveInstalledClient(client.client_id), "Approved -- switch Sync on when you are ready");
     });
   }
 
@@ -381,6 +384,14 @@ export default function ClientRow({
                 <Dot on={!!client.meta_ad_account_id} />
                 {client.meta_ad_account_id ? (client.meta_account_name ?? "Ad account linked") : "Meta not linked"}
               </Link>
+              {client.pending_approval && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Chip tone="warn">Installed from Shopify · awaiting approval</Chip>
+                  <button onClick={handleApprove} disabled={pending} className="font-medium text-accent hover:underline disabled:opacity-50">
+                    Approve
+                  </button>
+                </span>
+              )}
               {needsFirstSync && (
                 <button onClick={() => { setSyncDefault(client.backfill_from ?? null); setSyncOpen(true); }} className="font-medium text-accent hover:underline">
                   Sync now
@@ -458,19 +469,6 @@ export default function ClientRow({
                   reset
                 </button>
               )}
-            </div>
-
-            <div className="mb-3 flex items-center gap-2 text-xs text-zinc-300">
-              <span className="text-zinc-400">Ideal ROAS</span>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                placeholder="e.g. 4"
-                value={idealRoas}
-                onChange={(e) => setIdealRoas(e.target.value)}
-                className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
-              />
             </div>
 
             {!useDefault && (

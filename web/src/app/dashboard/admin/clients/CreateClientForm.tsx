@@ -90,10 +90,6 @@ export default function CreateClientForm() {
               <label className={labelClass}>GA4 property ID (optional)</label>
               <input name="ga4_property_id" placeholder="123456789" className={`w-full ${inputClass}`} />
             </div>
-            <div>
-              <label className={labelClass}>Ideal ROAS</label>
-              <input name="ideal_roas" type="number" step="0.1" min="0" placeholder="e.g. 4" className={`w-full ${inputClass}`} />
-            </div>
           </fieldset>
 
           <fieldset className="flex flex-col gap-3">

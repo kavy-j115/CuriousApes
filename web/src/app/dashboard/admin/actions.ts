@@ -52,12 +52,6 @@ export async function createClientRecord(
   if (cac) thresholds.cac_change_pct = Number(cac);
   if (roas) thresholds.roas_change_pct = Number(roas);
 
-  // Ideal ROAS drives the PROAS colour gradient in every report (green at or
-  // above it, fading to red as it drops). Kept in report_config.
-  const idealRoasRaw = (formData.get("ideal_roas") as string | null)?.trim();
-  const idealRoas = idealRoasRaw ? Number(idealRoasRaw) : null;
-  if (idealRoas !== null && (!Number.isFinite(idealRoas) || idealRoas <= 0)) return { error: "Ideal ROAS must be a number above 0." };
-
   let recipients: string[];
   try {
     recipients = ((formData.get("whatsapp_recipients") as string) ?? "")
@@ -85,7 +79,6 @@ export async function createClientRecord(
     display_name,
     alert_thresholds: Object.keys(thresholds).length > 0 ? thresholds : null,
     whatsapp_recipients: recipients,
-    report_config: idealRoas !== null ? { columns: [], idealRoas } : null,
     ...connections,
   });
   if (error) return { error: error.code === "23505" ? "A client with that ID already exists." : error.message };
@@ -320,6 +313,15 @@ export async function removeMetaConnection(connectionId: string) {
 // Disconnect = pause. The client disappears from every screen and nothing is
 // fetched, but its credentials and stored history are kept, so it can be
 // reconnected later. (Deleting the client is the permanent option below.)
+// A store that installed the public app by itself is created "pending approval" (sync off). This
+// accepts it as a client; sync is still switched on separately.
+export async function approveInstalledClient(clientId: string) {
+  const { supabase } = await requireAdmin();
+  const { error } = await supabase.from("clients").update({ pending_approval: false }).eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/dashboard", "layout");
+}
+
 export async function pauseClient(clientId: string) {
   const { supabase } = await requireAdmin();
   const { error } = await supabase

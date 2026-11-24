@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/lib/appName";
 import Link from "next/link";
 
 // Pages anyone can open without logging in: the privacy policy, terms and support page that the
@@ -7,7 +8,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-black text-zinc-300">
       <header className="border-b border-zinc-900">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          <span className="text-sm font-semibold tracking-wide text-zinc-100">CURIOUS APES</span>
+          <span className="text-sm font-semibold tracking-wide text-zinc-100">{APP_NAME.toUpperCase()}</span>
           <nav className="flex gap-4 text-xs text-zinc-400">
             <Link href="/privacy" className="hover:text-zinc-100">Privacy</Link>
             <Link href="/terms" className="hover:text-zinc-100">Terms</Link>

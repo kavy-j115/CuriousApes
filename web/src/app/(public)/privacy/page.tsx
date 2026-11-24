@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/lib/appName";
 export const metadata = { title: "Privacy policy" };
 
 const CONTACT = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
@@ -7,13 +8,12 @@ export default function PrivacyPage() {
   return (
     <>
       <h1>Privacy policy</h1>
-      <p className="text-zinc-500">Curious Apes reporting app for Shopify stores. Last updated: October 2026.</p>
+      <p className="text-zinc-500">{APP_NAME} reporting app for Shopify stores. Last updated: October 2026.</p>
 
       <h2>What the app is</h2>
       <p>
-        Curious Apes is a reporting service operated for the agency that manages your online store&apos;s marketing. It reads your
-        store&apos;s order, customer and sales data from Shopify so the agency can show you daily, weekly and monthly reports, alerts and
-        customer segments. The app only reads data. It never changes anything in your Shopify store.
+        {APP_NAME} is a reporting app for online stores. It reads your store&apos;s order, customer and sales data from Shopify so that you and your marketing team can
+        see daily, weekly and monthly reports, alerts and customer segments. The app only reads data. It never changes anything in your Shopify store.
       </p>
 
       <h2>Data we access</h2>
@@ -25,15 +25,15 @@ export default function PrivacyPage() {
 
       <h2>How we use it</h2>
       <p>
-        To build reports and charts for your store, to send you or your agency report summaries and alerts, and to prepare customer lists
-        that your agency uses for its own marketing on your behalf. We do not sell your data or your customers&apos; data, and we do not use it
+        To build reports and charts for your store, to send you or your marketing team report summaries and alerts, and to prepare customer lists
+        that your team uses for your own marketing. We do not sell your data or your customers&apos; data, and we do not use it
         for advertising of our own.
       </p>
 
       <h2>Where it is stored and who can see it</h2>
       <p>
-        Data is stored in an encrypted database hosted in India (AWS Mumbai region) with access limited by role. Only the agency&apos;s staff
-        assigned to your store and your own login can see it. Access keys are kept in an encrypted vault, not in the code.
+        Data is stored in an encrypted database hosted in India (AWS Mumbai region) with access limited by role. Only the staff of your reporting team
+        assigned to your store, and your own login, can see it. Access keys are kept in an encrypted vault, not in the code.
       </p>
 
       <h2>How long we keep it</h2>
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
             Questions about this policy: <a className="text-accent underline" href={`mailto:${CONTACT}`}>{CONTACT}</a>.
           </>
         ) : (
-          <>Questions about this policy can be sent to the agency that connected your store.</>
+          <>Questions about this policy can be sent to the team that connected your store.</>
         )}
       </p>
     </>

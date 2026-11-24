@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/lib/appName";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +14,7 @@ export default async function ChangePasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-black px-4 text-zinc-50">
       <div className="w-full max-w-sm">
-        <p className="mb-1 text-sm font-medium tracking-wide text-accent">CURIOUS APES</p>
+        <p className="mb-1 text-sm font-medium tracking-wide text-accent">{APP_NAME.toUpperCase()}</p>
         <h1 className="mb-6 text-xl font-semibold">
           {profile.must_change_password ? "Choose your password" : "Change password"}
         </h1>

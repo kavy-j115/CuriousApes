@@ -19,9 +19,26 @@ new app in the Shopify Dev Dashboard. It needs Shopify's App Store review.
 Nothing here writes to Shopify. The only non-read call is the OAuth token exchange (install and
 refresh), which `scripts/check_read_only.py` lists explicitly.
 
+## Embedded app home and any-store install (added after reading Shopify's App Store requirements)
+
+Shopify requires every App Store app to have a UI merchants can open in the admin (2.1.3), App Bridge
+(2.2.3), immediate OAuth after install (2.3.2) and a redirect to the app UI afterwards (2.3.3).
+
+- **App URL stays `<site>/api/shopify/install`.** Opened by Shopify for an install it verifies the
+  signature, creates a *pending approval* client for a store it has not seen (sync off, nothing fetched
+  until an admin clicks Approve on the Clients page) and starts OAuth. Opened inside the admin
+  (`embedded=1` / `id_token`) it forwards to the app home.
+- **App home `<site>/shopify-app`**: a plain HTML page whose first script is Shopify's app-bridge.js. It
+  trusts only a valid Shopify session token (JWT signed with the client secret, right audience, not
+  expired) or a signed query string. Not installed -> breaks out of the frame to the authorize page;
+  installed -> status, what is read, how to disconnect, links to privacy/terms/support.
+- After approving access the store lands on `https://admin.shopify.com/store/<handle>/apps/<client id>`.
+- A store that uninstalled and installs again is un-paused and goes back to *pending approval*.
+- In the Dev Dashboard / Partner Dashboard: tick **Embed app in Shopify admin**.
+
 ## What you do in Shopify (not something code can do)
 
-1. **Dev Dashboard -> Create app** (new app, e.g. "Curious Apes"), choose **Public distribution**.
+1. **Dev Dashboard -> Create app** (new app named "CuriousApes", the same as in the listing), choose **Public distribution**.
 2. **URLs**
    - App URL: `<site>/api/shopify/install`
    - Allowed redirection URL: `<site>/api/shopify/callback`

@@ -52,9 +52,11 @@ export async function GET(request: NextRequest) {
   }
 
   let token: string | TokenBundle | undefined;
+  let appClientId = "";
   let grantedScopes = "";
   try {
     const { clientId } = shopifyEnv();
+    appClientId = clientId;
     const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -104,5 +106,15 @@ export async function GET(request: NextRequest) {
     return page("Install failed", "The connection couldn't be saved. Please contact the agency.", 500);
   }
 
-  return page("Connected", "Your store is now connected. You can close this tab.", 200);
+  // A store that uninstalled and came back: un-pause it, but make it wait for approval again.
+  await admin
+    .from("clients")
+    .update({ paused_at: null, pause_reason: null, pending_approval: true })
+    .eq("client_id", verified.clientId)
+    .eq("pause_reason", "shopify_uninstalled");
+
+  // Land the merchant in the app's UI inside the Shopify admin (Shopify checks that authentication
+  // ends in the app's UI, not a blank page).
+  const handle = shop.replace(/\.myshopify\.com$/i, "");
+  return NextResponse.redirect(`https://admin.shopify.com/store/${handle}/apps/${appClientId}`);
 }
