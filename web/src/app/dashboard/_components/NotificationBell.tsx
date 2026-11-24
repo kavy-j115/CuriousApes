@@ -36,7 +36,10 @@ export default function NotificationBell() {
 
   useEffect(() => {
     const first = setTimeout(load, 500);
-    const id = setInterval(load, 60_000);
+    // Skip the refresh while the tab is in the background -- nobody is looking at the bell.
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 60_000);
     return () => {
       clearTimeout(first);
       clearInterval(id);

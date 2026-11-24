@@ -1,5 +1,6 @@
 "use server";
 
+import { isTeam } from "@/lib/teams";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -548,6 +549,7 @@ async function createAccount(input: {
   role: "admin" | "user" | "client";
   clientIds: string[];
   phone?: string | null;
+  team?: string | null;
 }): Promise<{ email: string; tempPassword: string }> {
   const admin = getAdminClient();
   const tempPassword = makeTempPassword();
@@ -563,7 +565,7 @@ async function createAccount(input: {
 
   const { error: profileError } = await admin
     .from("user_profiles")
-    .insert({ id: created.user.id, role: input.role, display_name: input.display_name, email: input.email, phone: input.phone ?? null, must_change_password: true });
+    .insert({ id: created.user.id, role: input.role, display_name: input.display_name, email: input.email, phone: input.phone ?? null, team: input.team ?? null, must_change_password: true });
   if (profileError) throw new Error(profileError.message);
 
   if (input.clientIds.length > 0) {
@@ -586,6 +588,8 @@ export async function createUser(formData: FormData) {
   const role = formData.get("role") as string;
   const clientIds = formData.getAll("client_ids") as string[];
   const phone = normalizePhone(formData.get("phone") as string | null);
+  const teamRaw = ((formData.get("team") as string | null) ?? "").trim();
+  if (teamRaw && !isTeam(teamRaw)) throw new Error("Unknown team.");
 
   if (!email || !["admin", "user"].includes(role)) {
     throw new Error("email and a valid role (admin or user) are required.");
@@ -597,6 +601,7 @@ export async function createUser(formData: FormData) {
     role: role as "admin" | "user",
     clientIds: role === "user" ? clientIds : [],
     phone,
+    team: teamRaw || null,
   });
 
   revalidatePath("/dashboard/admin/users");
@@ -627,6 +632,16 @@ export async function updateUserPhone(userId: string, phone: string) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard/admin/users");
+}
+
+export async function updateUserTeam(userId: string, team: string) {
+  const { supabase } = await requireAdmin();
+  if (team && !isTeam(team)) throw new Error("Unknown team.");
+  const { error } = await supabase.from("user_profiles").update({ team: team || null }).eq("id", userId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/admin/users");
+  revalidatePath("/dashboard/tasks");
 }
 
 export async function updateUserRole(userId: string, role: string, adminPassword?: string) {

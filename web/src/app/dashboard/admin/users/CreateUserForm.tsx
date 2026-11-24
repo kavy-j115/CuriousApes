@@ -5,6 +5,7 @@ import { notify } from "@/lib/notify";
 import { createUser } from "../actions";
 import Select from "../../_components/Select";
 import MultiSelect from "../../_components/MultiSelect";
+import { TEAMS } from "@/lib/teams";
 
 type Client = { client_id: string; display_name: string };
 type ActionState = { email: string; tempPassword: string } | { error: string } | null;
@@ -65,6 +66,18 @@ export default function CreateUserForm({ clients }: { clients: Client[] }) {
               <option value="user">User</option>
             </Select>
           </div>
+        </div>
+
+        <div className="max-w-xs">
+          <label className="mb-1 block text-xs font-medium text-zinc-400">Team</label>
+          <Select name="team" defaultValue="" className="[&_select]:py-2">
+            <option value="">No team</option>
+            {TEAMS.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
         </div>
 
         {role === "user" && (

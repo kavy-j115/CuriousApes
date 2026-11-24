@@ -11,7 +11,7 @@ export default async function AdminUsersPage() {
   const [{ data: clients }, { data: profiles }, { data: access }] = await Promise.all([
     supabase.from("clients").select("client_id, display_name").order("display_name"),
     // Agency people only -- client logins are created and shown on the Clients page.
-    supabase.from("user_profiles").select("id, email, display_name, role, phone").in("role", ["admin", "user"]).order("created_at"),
+    supabase.from("user_profiles").select("id, email, display_name, role, phone, team").in("role", ["admin", "user"]).order("created_at"),
     supabase.from("client_access").select("user_id, client_id, expires_at"),
   ]);
 
@@ -28,6 +28,7 @@ export default async function AdminUsersPage() {
     display_name: p.display_name as string | null,
     role: p.role as Role,
     phone: (p.phone as string | null) ?? "",
+    team: (p.team as string | null) ?? "",
     access: accessByUser.get(p.id as string) ?? [],
   }));
 

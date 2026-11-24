@@ -82,6 +82,23 @@ def warn_expiring_meta_logins(conn) -> None:
         print(f"  [WARN] couldn't check Meta login expiry: {e}")
 
 
+def send_task_due_reminders(conn) -> None:
+    """Tell the people named on a task when it is due today or overdue (one bell
+    notification per person per task per day -- the SQL function de-duplicates)."""
+    try:
+        today = datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
+        cur = conn.cursor()
+        cur.execute("SELECT task_due_reminders(%s);", (today,))
+        sent = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        if sent:
+            print(f"  Task reminders sent: {sent}")
+    except Exception as e:  # tasks may not be migrated yet; never stop the run
+        conn.rollback()
+        print(f"  [WARN] couldn't send task reminders: {e}")
+
+
 def _last_complete_day(conn, client_id: str) -> date:
     """Yesterday in the client's own time zone -- the latest day that is whole."""
     cur = conn.cursor()
@@ -93,6 +110,15 @@ def _last_complete_day(conn, client_id: str) -> date:
 
 # How far back a store with the read_all_orders scope may be backfilled (about five years).
 MAX_HISTORY_DAYS = 1825
+
+
+def _send_status(err: str) -> tuple[str, str]:
+    """A send refused because the number is not on the test number's allowed-recipient list in
+    Meta (error 131030) is a setting to fix in Meta, not a pipeline failure: report it as skipped
+    so a run only turns red for real problems."""
+    if "131030" in err:
+        return "skipped", f"number not on Meta's allowed recipient list -- {err}"
+    return "error", err
 
 
 def run_for_client(
@@ -338,7 +364,7 @@ def run_for_client(
     else:
         sent_count, send_errors = send_pending_alerts(conn, client_id, recipients, whatsapp_config)
         for alert_type, err in send_errors:
-            results.append(StepResult(f"WhatsApp notify ({alert_type})", "error", err))
+            results.append(StepResult(f"WhatsApp notify ({alert_type})", *_send_status(err)))
         if sent_count or not send_errors:
             results.append(StepResult("WhatsApp notify", "ok", f"{sent_count} alert(s) sent to {len(recipients)} recipient(s)"))
 
@@ -370,7 +396,7 @@ def run_for_client(
                 "Monthly report" if is_monthly else views.get("yesterday", views["mtd"]), "mtd",
             )
             for err in send_errors:
-                results.append(StepResult(step, "error", err))
+                results.append(StepResult(step, *_send_status(err)))
             if sent:
                 results.append(StepResult(step, "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
         # Weekly report: on Mondays the client also gets the last 7 completed days
@@ -381,7 +407,7 @@ def run_for_client(
                 views["7d"], "7d",  # caption: "Brand - 28 Sep to 4 Oct 2026"
             )
             for err in send_errors:
-                results.append(StepResult("WhatsApp weekly report", "error", err))
+                results.append(StepResult("WhatsApp weekly report", *_send_status(err)))
             if sent:
                 results.append(StepResult("WhatsApp weekly report", "ok", f"sent to {sent} of {len(recipients)} recipient(s)"))
 
@@ -444,6 +470,7 @@ def main():
 
     whatsapp_config = load_whatsapp_config(conn)
     warn_expiring_meta_logins(conn)
+    send_task_due_reminders(conn)
 
     def process(config: dict, client_since: str, client_meta_since: str | None, owed, new_client: bool) -> list[StepResult]:
         """One client from start to finish, on its OWN database connection

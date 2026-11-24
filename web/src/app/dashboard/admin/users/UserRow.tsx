@@ -6,6 +6,7 @@ import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import {
   updateUserRole,
   updateUserPhone,
+  updateUserTeam,
   resetUserPassword,
   setUserClientAccess,
   grantTemporaryAccess,
@@ -15,6 +16,7 @@ import {
 import Select from "../../_components/Select";
 import MultiSelect from "../../_components/MultiSelect";
 import type { Role } from "@/lib/auth/profile";
+import { TEAMS, TEAM_LABEL } from "@/lib/teams";
 
 type Client = { client_id: string; display_name: string };
 type AccessRow = { client_id: string; expires_at: string | null };
@@ -24,6 +26,7 @@ export type UserWithAccess = {
   display_name: string | null;
   role: Role;
   phone: string;
+  team: string;
   access: AccessRow[];
 };
 
@@ -46,6 +49,7 @@ function UserRow({
   const [selected, setSelected] = useState<string[]>(permanentIds);
   const [collabClient, setCollabClient] = useState("");
   const [phone, setPhone] = useState(user.phone);
+  const [team, setTeam] = useState(user.team);
   const [editingPhone, setEditingPhone] = useState(false);
   const [pendingAdmin, setPendingAdmin] = useState<{ kind: "role"; role: Role } | { kind: "delete" } | null>(null);
   const [adminPassword, setAdminPassword] = useState("");
@@ -119,6 +123,20 @@ function UserRow({
     });
   }
 
+  function handleTeamChange(next: string) {
+    const previous = team;
+    setTeam(next);
+    startTransition(async () => {
+      try {
+        await updateUserTeam(user.id, next);
+        notify("Team updated");
+      } catch (e) {
+        setTeam(previous);
+        notify(e instanceof Error ? e.message : "Couldn't update the team.", "error");
+      }
+    });
+  }
+
   function handleResetPassword() {
     if (!confirm(`Reset the password for ${user.email ?? "this user"}? They will have to choose a new one at next login.`)) return;
     startTransition(async () => {
@@ -182,6 +200,7 @@ function UserRow({
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${role === "admin" ? "bg-status-warning/15 text-status-warning" : "bg-accent/15 text-accent"}`}>
               {role === "admin" ? "Admin" : "User"}
             </span>
+            {team && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] font-medium text-zinc-300">{TEAM_LABEL[team] ?? team}</span>}
           </div>
           <p className="text-xs text-zinc-500">{user.email}</p>
           <div className="mt-1 flex items-center gap-1.5 text-xs">
@@ -218,6 +237,16 @@ function UserRow({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <span className={pending ? "pointer-events-none opacity-50" : ""}>
+            <Select value={team} onChange={handleTeamChange}>
+              <option value="">No team</option>
+              {TEAMS.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </span>
           <span title={isSelf ? "Can't change your own role" : undefined} className={isSelf || pending ? "pointer-events-none opacity-50" : ""}>
             <Select value={role} onChange={(v) => handleRoleChange(v as Role)}>
               <option value="admin">Admin</option>
