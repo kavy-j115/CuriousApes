@@ -47,7 +47,7 @@ Create in WhatsApp Manager, category **Utility**, language English:
 - Vault secrets (`scripts/set_vault_secret.py <name>`):
   `agency.whatsapp.access_token`, `agency.whatsapp.app_secret`,
   `agency.whatsapp.verify_token` (any random string you choose).
-- Netlify env var `WHATSAPP_PHONE_NUMBER_ID` (same value as the yaml).
+- Production env var `WHATSAPP_PHONE_NUMBER_ID` (on the DigitalOcean Droplet) (same value as the yaml).
 
 ## One-time setup
 
@@ -60,8 +60,8 @@ Create in WhatsApp Manager, category **Utility**, language English:
    WABA assigned with full control, token with no expiry -> Vault.
 5. Create the two templates above; wait for approval.
 6. Meta app (developers.facebook.com) -> WhatsApp -> Configuration -> Webhook:
-   callback URL `<SITE_URL>/api/whatsapp/webhook`, verify token = the Vault
+   callback URL `<SITE_URL>/api/whatsapp/webhook` (production: `https://app.curiousapes.in/api/whatsapp/webhook`), verify token = the Vault
    `verify_token`; subscribe to the **messages** field. App secret (App settings
    -> Basic) -> Vault `app_secret`.
-7. Put the Phone number ID in `config/whatsapp.yaml` and Netlify, deploy.
+7. Put the Phone number ID in `config/whatsapp.yaml` and the Droplet's env, deploy.
 8. Add each client's numbers on the Clients page.

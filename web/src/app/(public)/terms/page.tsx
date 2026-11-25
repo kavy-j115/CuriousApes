@@ -6,11 +6,11 @@ export default function TermsPage() {
   return (
     <>
       <h1>Terms of service</h1>
-      <p className="text-zinc-500">{APP_NAME} reporting app for Shopify stores. Last updated: October 2026.</p>
+      <p className="text-zinc-500">{APP_NAME} reporting app for Shopify stores. Last updated: November 2026.</p>
 
       <h2>The service</h2>
       <p>
-        {APP_NAME} reads your Shopify store&apos;s data and presents reports, alerts and customer lists to you and to your marketing team. By installing the app you allow it to read your store&apos;s orders, customers, products and analytics.
+        {APP_NAME} reads your Shopify store&apos;s data and presents reports, alerts and customer lists to you and to your marketing team. By installing the app you allow it to read your store&apos;s orders, customers, products and inventory, analytics and marketing data, and pricing, discount and payout data. The access is read-only.
       </p>
 
       <h2>Your responsibilities</h2>

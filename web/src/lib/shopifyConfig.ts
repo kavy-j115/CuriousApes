@@ -15,7 +15,7 @@ export function tokenSecretName(clientId: string): string {
 const DEFAULT_SCOPES = [
   // orders
   "read_orders", "read_draft_orders", "read_fulfillments", "read_assigned_fulfillment_orders",
-  "read_merchant_managed_fulfillment_orders", "read_returns", "read_marketplace_orders",
+  "read_merchant_managed_fulfillment_orders", "read_returns",
   // customers
   "read_customers", "read_customer_events", "read_customer_merge", "read_customer_data_erasure",
   // products and inventory

@@ -71,7 +71,7 @@ new client can be backfilled for months or years through the bulk export.
    fail with an `app_access` error.
 4. When approved: add `read_all_orders` (together with `read_orders`) in a new app version, release it,
    and set `SHOPIFY_SCOPES=read_orders,read_customers,read_products,read_reports,read_all_orders`
-   in `web/.env.local` and Netlify so the install link asks for it.
+   in `web/.env.local` and the Droplet's env so the install link asks for it.
 5. A store that installed earlier does NOT get the new scope by itself: it has to approve the updated
    app (reinstall through the install link).
 
@@ -84,10 +84,10 @@ years back (presets for 6 months, a year and everything) and the pipeline's hist
 
 | What | Where |
 |---|---|
-| New app's client ID | `SHOPIFY_CLIENT_ID` in `web/.env.local` and Netlify |
+| New app's client ID | `SHOPIFY_CLIENT_ID` in `web/.env.local` and the Droplet's env |
 | New app's client secret | `venv/Scripts/python scripts/set_vault_secret.py agency.shopify.client_secret` (hidden prompt) |
 | New app's client ID for the pipeline's refresh | `venv/Scripts/python scripts/set_vault_secret.py agency.shopify.client_id` |
-| Turn on expiring tokens | `SHOPIFY_EXPIRING_TOKENS=1` in `web/.env.local` and Netlify |
+| Turn on expiring tokens | `SHOPIFY_EXPIRING_TOKENS=1` in `web/.env.local` and the Droplet's env |
 | Public contact address on the policy pages | `NEXT_PUBLIC_SUPPORT_EMAIL` |
 
 The stores already connected through their own custom apps keep their stored tokens and keep working.

@@ -8,7 +8,7 @@ export default function PrivacyPage() {
   return (
     <>
       <h1>Privacy policy</h1>
-      <p className="text-zinc-500">{APP_NAME} reporting app for Shopify stores. Last updated: October 2026.</p>
+      <p className="text-zinc-500">{APP_NAME} reporting app for Shopify stores. Last updated: November 2026.</p>
 
       <h2>What the app is</h2>
       <p>
@@ -17,11 +17,15 @@ export default function PrivacyPage() {
       </p>
 
       <h2>Data we access</h2>
+      <p>The app asks Shopify for read-only access. It has no permission to create, change or delete anything. The access covers:</p>
       <ul>
-        <li>Orders: order numbers, dates, totals, discounts, payment and fulfillment status, and the products ordered.</li>
-        <li>Customers: name, email address, phone number and city or state shown on orders, used to group repeat customers.</li>
-        <li>Products and store analytics: product titles and Shopify&apos;s own sales and visitor figures.</li>
+        <li>Orders: order numbers, dates, totals, discounts, payment and fulfillment status, the products ordered, draft orders, fulfillments and returns.</li>
+        <li>Customers: name, email address, phone number and city or state shown on orders, customer activity events and merged customer records, used to group repeat customers.</li>
+        <li>Products and inventory: product titles, product listings, inventory levels, store locations, sales channels (publications), markets and languages.</li>
+        <li>Store analytics and marketing: Shopify&apos;s own sales and visitor figures and reports, marketing events and the tracking pixels installed on the store.</li>
+        <li>Pricing and money: discounts and price rules, gift cards, shipping settings and Shopify Payments payouts, used to explain order totals and net sales in reports.</li>
       </ul>
+      <p>We use this data only to produce your reports, alerts and customer lists. We do not read payment card details.</p>
 
       <h2>How we use it</h2>
       <p>

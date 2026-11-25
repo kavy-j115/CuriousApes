@@ -116,7 +116,9 @@ export async function GET(request: NextRequest) {
     <div class="card"><h2>What this app reads</h2><ul>
       <li>Orders: dates, totals, discounts, payment and fulfillment status, and products ordered.</li>
       <li>Customers: names, email addresses and phone numbers shown on orders, to group repeat customers.</li>
-      <li>Sales and visitor figures from Shopify's own analytics.</li></ul>
+      <li>Products and inventory: product titles, listings, stock levels, locations, sales channels and markets.</li>
+      <li>Sales and visitor figures from Shopify's own analytics, reports and marketing events.</li>
+      <li>Discounts, gift cards, shipping settings and Shopify Payments payouts, to explain order totals.</li></ul>
       <p class="muted">The app only reads. It never creates, edits or deletes anything in your store.</p></div>
     <div class="card"><h2>Disconnect</h2>
       <p>Uninstall the app any time from <strong>Settings &rsaquo; Apps and sales channels</strong> in your Shopify admin. Syncing stops immediately and your data is erased within 48 hours.</p>

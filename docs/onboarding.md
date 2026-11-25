@@ -18,9 +18,9 @@ Done entirely from the admin Clients page -- no config file, no git commit.
 ## One-time setup
 - Shopify app (Dev Dashboard, custom distribution, legacy install flow) with
   scopes `read_orders,read_customers,read_products` and redirect URLs
-  `${SITE_URL}/api/shopify/callback` (production and `http://localhost:3000/...`).
+  `${SITE_URL}/api/shopify/callback` (production `https://app.curiousapes.in/api/shopify/callback` and `http://localhost:3000/...`).
 - `agency.shopify.client_secret` in Vault (scripts/set_vault_secret.py).
-- `SHOPIFY_CLIENT_ID` and `SITE_URL` in web/.env.local and in Netlify.
+- `SHOPIFY_CLIENT_ID` and `SITE_URL` in web/.env.local and in the production web environment on the DigitalOcean Droplet (`SITE_URL=https://app.curiousapes.in`).
 - sql/020_client_connections.sql applied (scripts/migrate.py).
 
 ## Notes

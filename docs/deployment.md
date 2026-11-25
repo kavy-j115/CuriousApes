@@ -1,5 +1,7 @@
 # Deployment (Netlify)
 
+> **Outdated:** the app now runs on a DigitalOcean Droplet at https://app.curiousapes.in (not Netlify). The steps below describe the old Netlify setup and are kept for history.
+
 ## Setup
 
 1. In Netlify: **Add new site → Import an existing project**, connect the
